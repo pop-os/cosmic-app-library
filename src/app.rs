@@ -220,7 +220,6 @@ struct CosmicAppLibrary {
     dnd_icon: Option<usize>,
     offer_group: Option<usize>,
     waiting_for_filtered: bool,
-    scroll_offset: f32,
     core: Core,
     group_to_delete: Option<usize>,
     gpus: Option<Vec<Gpu>>,
@@ -254,7 +253,6 @@ impl Default for CosmicAppLibrary {
             dnd_icon: Default::default(),
             offer_group: Default::default(),
             waiting_for_filtered: Default::default(),
-            scroll_offset: Default::default(),
             core: Default::default(),
             group_to_delete: Default::default(),
             gpus: Default::default(),
@@ -303,7 +301,6 @@ impl CosmicAppLibrary {
             self.surface_state = SurfaceState::WaitingToBeShown;
             self.edit_name = None;
             self.search_value = "".to_string();
-            self.scroll_offset = 0.0;
             self.cur_group = 0;
             self.load_apps();
             self.needs_clear = true;
@@ -400,7 +397,6 @@ enum Message {
     StartDndOffer(usize),
     FinishDndOffer(usize, Option<DesktopEntryData>),
     LeaveDndOffer(usize),
-    ScrollYOffset(f32),
     GpuUpdate(Option<Vec<Gpu>>),
     PinToAppTray(usize),
     UnPinFromAppTray(usize),
@@ -534,7 +530,6 @@ impl CosmicAppLibrary {
         self.cur_group = 0;
         self.menu = None;
         self.group_to_delete = None;
-        self.scroll_offset = 0.0;
         self.surface_state = SurfaceState::Hidden;
 
         iced::Task::batch(vec![
@@ -766,7 +761,6 @@ impl cosmic::Application for CosmicAppLibrary {
                 self.edit_name = None;
                 self.search_value.clear();
                 self.cur_group = i;
-                self.scroll_offset = 0.0;
                 self.scrollable_id = Id::new(
                     self.config
                         .groups()
@@ -862,7 +856,7 @@ impl cosmic::Application for CosmicAppLibrary {
                                             size_limits: Limits::NONE.min_width(1.0).min_height(1.0).max_width(300.0).max_height(800.0),
                                             anchor_rect: Rectangle {
                                                 x: rect.x as i32,
-                                                y: rect.y as i32 - self.scroll_offset as i32,
+                                                y: rect.y as i32,
                                                 width: rect.width as i32,
                                                 height: rect.height as i32,
                                             },
@@ -958,9 +952,6 @@ impl cosmic::Application for CosmicAppLibrary {
             }
             Message::LeaveDndOffer(i) => {
                 self.offer_group = self.offer_group.filter(|g| *g != i);
-            }
-            Message::ScrollYOffset(y) => {
-                self.scroll_offset = y;
             }
             Message::ConfirmDelete => {
                 let mut cmds = vec![destroy_layer_surface(*DELETE_GROUP_WINDOW_ID)];
@@ -1405,7 +1396,6 @@ impl cosmic::Application for CosmicAppLibrary {
                     // padding on top needed to avoid focus highlight clipping
                     .padding([4, space_xxl, space_xxs, space_xxl]),
             )
-            .on_scroll(|viewport| Message::ScrollYOffset(viewport.absolute_offset().y))
             .id(self.scrollable_id.clone())
             .height(Length::Fill),
         )
