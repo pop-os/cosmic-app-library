@@ -3,6 +3,7 @@ use std::{
     fmt::{Debug, Display},
     path::{Path, PathBuf},
     rc::Rc,
+    str::FromStr,
     sync::{Arc, LazyLock},
     time::{Duration, Instant},
 };
@@ -125,23 +126,39 @@ pub(crate) static MENU_AUTOSIZE_ID: LazyLock<cosmic::widget::Id> =
 #[derive(Parser, Debug, Serialize, Deserialize, Clone)]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
-pub struct Args {}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LauncherCommands;
-
-impl std::fmt::Display for LauncherCommands {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&ron::to_string(self).map_err(|_| std::fmt::Error)?)
-    }
+pub struct Args {
+    #[clap(subcommand)]
+    pub subcommand: Option<ApplicationsTasks>,
 }
 
 impl CosmicFlags for Args {
-    type SubCommand = LauncherCommands;
+    type SubCommand = ApplicationsTasks;
     type Args = Vec<String>;
 
-    fn action(&self) -> Option<&LauncherCommands> {
-        None
+    fn action(&self) -> Option<&ApplicationsTasks> {
+        self.subcommand.as_ref()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, clap::Subcommand)]
+pub enum ApplicationsTasks {
+    #[clap(about = "Start app-library with an input")]
+    Input { input: Option<String> },
+    #[clap(about = "Close app-library if open")]
+    Close,
+}
+
+impl Display for ApplicationsTasks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::ser::to_string(self).unwrap())
+    }
+}
+
+impl FromStr for ApplicationsTasks {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::de::from_str(s)
     }
 }
 
@@ -236,6 +253,7 @@ struct CosmicAppLibrary {
     entry_icon_handles: Vec<widget::icon::Handle>,
     scrollable_id: widget::Id,
     surface_state: SurfaceState,
+    hand_over: String,
 }
 
 impl Default for CosmicAppLibrary {
@@ -270,6 +288,7 @@ impl Default for CosmicAppLibrary {
             entry_icon_handles: Default::default(),
             scrollable_id: widget::Id::unique(),
             surface_state: SurfaceState::Hidden,
+            hand_over: String::default(),
         }
     }
 }
@@ -536,6 +555,7 @@ impl CosmicAppLibrary {
         self.group_to_delete = None;
         self.scroll_offset = 0.0;
         self.surface_state = SurfaceState::Hidden;
+        self.hand_over.clear();
 
         iced::Task::batch(vec![
             text_input::focus(SEARCH_ID.clone()),
@@ -1024,6 +1044,11 @@ impl cosmic::Application for CosmicAppLibrary {
                     self.height = size.height;
                     self.handle_overlap();
                 }
+                if !self.hand_over.is_empty() {
+                    let input = self.hand_over.clone();
+                    self.hand_over.clear();
+                    return self.update(Message::InputChanged(input));
+                }
             }
             Message::Overlap(overlap_notify_event) => match overlap_notify_event {
                 OverlapNotifyEvent::OverlapLayerAdd {
@@ -1058,10 +1083,26 @@ impl cosmic::Application for CosmicAppLibrary {
     }
 
     fn dbus_activation(&mut self, msg: dbus_activation::Message) -> Task<Self::Message> {
-        if matches!(msg.msg, dbus_activation::Details::Activate) {
-            self.activate()
-        } else {
-            Task::none()
+        match msg.msg {
+            dbus_activation::Details::Activate => self.activate(),
+            dbus_activation::Details::ActivateAction { action, .. } => {
+                let Ok(cmd) = ApplicationsTasks::from_str(&action) else {
+                    return Task::none();
+                };
+                match cmd {
+                    ApplicationsTasks::Input { input } => {
+                        if let Some(input) = input {
+                            self.hand_over.push_str(&input);
+                        }
+                        if self.surface_state == SurfaceState::Hidden {
+                            return self.activate();
+                        }
+                        Task::none()
+                    }
+                    ApplicationsTasks::Close => self.hide(),
+                }
+            }
+            _ => Task::none(),
         }
     }
 
