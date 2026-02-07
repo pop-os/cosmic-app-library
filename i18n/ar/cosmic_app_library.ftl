@@ -1,7 +1,7 @@
 cosmic-app-library = مكتبة تطبيقات COSMIC
 cosmic-library-home = مكتبة المنزل
 cosmic-office = مكتب
-cosmic-system = نظام
+cosmic-system = النظام
 cosmic-utilities = وسائل
 new-group = أنشئ مجلد
 name = الاسم
