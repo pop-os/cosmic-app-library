@@ -4,12 +4,12 @@ version = "1.0.2"
 authors = ["Ashley Wulber <ashley@system76.com>"]
 edition = "2024"
 [features]
-default = []
+default = ["wgpu"]
 wgpu = ["libcosmic/wgpu"]
 
 [dependencies]
 zbus = "5.12"
-libcosmic = { git = "https://github.com/pop-os/libcosmic/", features = [
+libcosmic = { git = "https://github.com/pop-os/libcosmic", features = [
     "dbus-config",
     "desktop",
     "winit",
@@ -18,7 +18,7 @@ libcosmic = { git = "https://github.com/pop-os/libcosmic/", features = [
     "single-instance",
     "desktop-systemd-scope",
     "xdg-portal",
-] }
+], branch = "iced-rebase" }
 tokio = { version = "1.48", features = ["sync", "rt", "process"] }
 sctk = { package = "smithay-client-toolkit", version = "0.20.0" }
 pretty_env_logger = "0.5"
@@ -41,14 +41,14 @@ url = "2.5"
 nix = "0.30"
 clap = { version = "4.5", features = ["derive"] }
 switcheroo-control = { git = "https://github.com/pop-os/dbus-settings-bindings" }
-cosmic-app-list-config = { git = "https://github.com/pop-os/cosmic-applets" }
+cosmic-app-list-config = { git = "https://github.com/pop-os/cosmic-applets", branch = "iced-rebase" }
+# cosmic-app-list-config = { path = "../cosmic-applets/cosmic-app-list/cosmic-app-list-config/" }
 
 [profile.release]
 lto = "thin"
 
-# [patch."https://github.com/pop-os/libcosmic/"]
-# libcosmic = { git = "https://github.com/pop-os/libcosmic//", rev = "e838616" }
-# cosmic-config = { git = "https://github.com/pop-os/libcosmic//", rev = "e838616" }
-
-# cosmic-config = { path = "../../libcosmic/cosmic-config/" }
-# libcosmic = { path = "../../libcosmic/" }
+[patch."https://github.com/pop-os/libcosmic/"]
+libcosmic = { git = "https://github.com/pop-os/libcosmic//", branch = "iced-rebase" }
+cosmic-config = { git = "https://github.com/pop-os/libcosmic//", branch = "iced-rebase" }
+# cosmic-config = { path = "../libcosmic/cosmic-config/" }
+# libcosmic = { path = "../libcosmic/" }
