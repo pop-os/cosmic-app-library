@@ -177,7 +177,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &cosmic::Renderer,
         limits: &layout::Limits,
@@ -194,13 +194,13 @@ where
             |renderer, limits| {
                 let content_state = &mut tree.borrow_mut().children[0];
                 self.content
-                    .as_widget()
+                    .as_widget_mut()
                     .layout(content_state, renderer, limits)
             },
-            self.source_icon.as_ref(),
+            self.source_icon.as_mut(),
             |renderer, limits, icon| {
                 let icon_state = &mut tree.borrow_mut().children[1];
-                icon.as_widget().layout(icon_state, renderer, limits)
+                icon.as_widget_mut().layout(icon_state, renderer, limits)
             },
         )
     }
@@ -247,14 +247,14 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: layout::Layout<'_>,
         renderer: &cosmic::Renderer,
         operation: &mut dyn Operation<()>,
     ) {
-        operation.container(None, layout.bounds(), &mut |operation| {
-            self.content.as_widget().operate(
+        operation.traverse(&mut |operation| {
+            self.content.as_widget_mut().operate(
                 &mut tree.children[0],
                 layout.children().next().unwrap(),
                 renderer,
@@ -266,14 +266,16 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: layout::Layout<'_>,
+        layout: layout::Layout<'b>,
         renderer: &cosmic::Renderer,
+        viewport: &Rectangle,
         translation: Vector,
     ) -> Option<overlay::Element<'b, Message, cosmic::Theme, cosmic::Renderer>> {
         self.content.as_widget_mut().overlay(
             &mut tree.children[0],
             layout.children().next().unwrap(),
             renderer,
+            viewport,
             translation,
         )
     }
@@ -286,20 +288,20 @@ where
         tree::State::new(State::default())
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: layout::Layout<'_>,
         cursor_position: mouse::Cursor,
         renderer: &cosmic::Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
-        let ret = self.content.as_widget_mut().on_event(
+    ) {
+        self.content.as_widget_mut().update(
             &mut tree.children[0],
-            event.clone(),
+            event,
             layout.children().next().unwrap(),
             cursor_position,
             renderer,
@@ -311,23 +313,21 @@ where
         let state = tree.state.downcast_mut::<State>();
 
         if cursor_position.is_over(layout.bounds()) {
-            match &event {
+            match event {
                 Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                     state.right_press = true;
-                    return event::Status::Captured;
+                    shell.capture_event();
                 }
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Right)) => {
                     if state.right_press {
                         shell.publish(self.on_right_release.as_ref()(layout.bounds()));
                         state.right_press = false;
-                        return event::Status::Captured;
+                        shell.capture_event();
                     }
                 }
                 _ => {}
             }
         }
-
-        ret
     }
 
     fn mouse_interaction(
@@ -357,8 +357,8 @@ pub fn layout<'a, Renderer, M>(
     max_height: u32,
     max_width: u32,
     layout_content: impl FnOnce(&Renderer, &layout::Limits) -> layout::Node,
-    icon: Option<&Element<'a, M>>,
-    layout_icon: impl FnOnce(&Renderer, &layout::Limits, &Element<'a, M>) -> layout::Node,
+    icon: Option<&mut Element<'a, M>>,
+    layout_icon: impl FnOnce(&Renderer, &layout::Limits, &mut Element<'a, M>) -> layout::Node,
 ) -> layout::Node {
     let limits = limits
         .loose()

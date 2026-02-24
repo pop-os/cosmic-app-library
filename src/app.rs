@@ -29,7 +29,12 @@ use cosmic::{
         /*wayland::actions::{
             data_device::ActionInner,
         },*/
-        widget::{column, container, horizontal_rule, row, scrollable},
+        widget::{
+            column, container, mouse_area, row,
+            rule::horizontal as horizontal_rule,
+            scrollable::RelativeOffset,
+            space::{horizontal, vertical},
+        },
         window::Event as WindowEvent,
     },
     iced_core::{
@@ -56,7 +61,6 @@ use cosmic::{
             popup::{SctkPopupSettings, SctkPositioner},
         },
     },
-    iced_widget::{horizontal_space, mouse_area, scrollable::RelativeOffset, vertical_space},
     iced_winit::commands::{
         self,
         activation::request_token,
@@ -73,7 +77,7 @@ use cosmic::{
         divider,
         dnd_destination::dnd_destination_for_data,
         icon::{self, from_name},
-        search_input, svg, text, text_input, tooltip,
+        scrollable, search_input, space, svg, text, text_input, tooltip,
     },
 };
 use cosmic_app_list_config::AppListConfig;
@@ -630,13 +634,16 @@ impl cosmic::Application for CosmicAppLibrary {
 
                 return iced_runtime::task::widget(operation::scrollable::snap_to(
                     self.scrollable_id.clone(),
-                    RelativeOffset { x: 0., y },
+                    RelativeOffset {
+                        x: None,
+                        y: Some(y),
+                    },
                 ));
             }
             Message::KeyboardNav(message) => match message {
                 keyboard_nav::Action::FocusNext => {
                     return iced::Task::batch(vec![
-                        iced::widget::focus_next()
+                        iced::widget::operation::focus_next()
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(id))),
                         iced_runtime::task::widget(find_focused())
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
@@ -644,7 +651,7 @@ impl cosmic::Application for CosmicAppLibrary {
                 }
                 keyboard_nav::Action::FocusPrevious => {
                     return iced::Task::batch(vec![
-                        iced::widget::focus_previous()
+                        iced::widget::operation::focus_previous()
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(id))),
                         iced_runtime::task::widget(find_focused())
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
@@ -666,7 +673,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     self.focused_id = None;
 
                     return iced::Task::batch(vec![
-                        iced::widget::focus_previous()
+                        iced::widget::operation::focus_previous()
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(id))),
                         iced_runtime::task::widget(find_focused())
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
@@ -685,7 +692,10 @@ impl cosmic::Application for CosmicAppLibrary {
                         .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
                     iced_runtime::task::widget(operation::scrollable::snap_to(
                         self.scrollable_id.clone(),
-                        RelativeOffset { x: 0., y },
+                        RelativeOffset {
+                            x: None,
+                            y: Some(y),
+                        },
                     )),
                 ]);
             }
@@ -699,7 +709,7 @@ impl cosmic::Application for CosmicAppLibrary {
                 if i == self.entry_ids.len() as i32 - 1 {
                     self.focused_id = None;
                     return iced::Task::batch(vec![
-                        iced::widget::focus_next()
+                        iced::widget::operation::focus_next()
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(id))),
                         iced_runtime::task::widget(find_focused())
                             .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
@@ -717,7 +727,10 @@ impl cosmic::Application for CosmicAppLibrary {
                 return Task::batch(vec![
                     iced_runtime::task::widget(operation::scrollable::snap_to(
                         self.scrollable_id.clone(),
-                        RelativeOffset { x: 0., y },
+                        RelativeOffset {
+                            x: None,
+                            y: Some(y),
+                        },
                     )),
                     iced_runtime::task::widget(focus(focused))
                         .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
@@ -1140,7 +1153,7 @@ impl cosmic::Application for CosmicAppLibrary {
                 .as_ref()
                 .and_then(|i| self.entry_path_input.get(*i).map(|e| (e, i)))
             else {
-                return container(horizontal_space())
+                return container(space::horizontal())
                     .width(Length::Fixed(1.0))
                     .height(Length::Fixed(1.0))
                     .into();
@@ -1205,7 +1218,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     ]
                 } else {
                     row![
-                        horizontal_space().width(16.0),
+                        space::horizontal().width(16.0),
                         text::body(fl!("pin-to-app-tray"))
                     ]
                 }
@@ -1254,7 +1267,7 @@ impl cosmic::Application for CosmicAppLibrary {
         }
         if id == *NEW_GROUP_WINDOW_ID {
             let Some(group_name) = self.new_group.as_ref() else {
-                return container(horizontal_space())
+                return container(space::horizontal())
                     .width(Length::Fixed(1.0))
                     .height(Length::Fixed(1.0))
                     .into();
@@ -1331,7 +1344,7 @@ impl cosmic::Application for CosmicAppLibrary {
             .spacing(space_xxs)
         } else {
             row![
-                horizontal_space().width(Length::FillPortion(1)),
+                space::horizontal().width(Length::FillPortion(1)),
                 if let Some(edit_name) = self.edit_name.as_ref() {
                     container(
                         text_input(cur_group.name(), edit_name)
@@ -1347,7 +1360,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     container(text(cur_group.name()).size(24))
                 },
                 row![
-                    horizontal_space(),
+                    space::horizontal(),
                     tooltip(
                         {
                             let mut b = button::custom(
@@ -1442,7 +1455,7 @@ impl cosmic::Application for CosmicAppLibrary {
                 let missing = 7 - new_row.len();
                 if missing > 0 {
                     new_row.push(
-                        iced::widget::horizontal_space()
+                        iced::widget::space::horizontal()
                             .width(Length::FillPortion(missing.try_into().unwrap()))
                             .into(),
                     );
@@ -1605,12 +1618,14 @@ impl cosmic::Application for CosmicAppLibrary {
                         color: t.bg_divider().into(),
                     },
                     shadow: Shadow::default(),
+                    snap: true,
                 }
             })))
-            .center_x(Length::Fill);
+            .center_x(Length::Fill)
+            .width(Length::Fixed(1200.));
         row![
             mouse_area(
-                container(horizontal_space().width(Length::Fixed(1.0)))
+                container(space::horizontal().width(Length::Fixed(1.0)))
                     .width(Length::Fill)
                     .height(Length::Fill)
             )
@@ -1618,7 +1633,7 @@ impl cosmic::Application for CosmicAppLibrary {
             container(
                 column![
                     mouse_area(
-                        container(vertical_space())
+                        container(space::vertical())
                             .width(Length::Fill)
                             .height(Length::Fixed(self.margin + 16.))
                     )
@@ -1631,7 +1646,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     .width(Length::Shrink)
                     .height(Length::Shrink),
                     mouse_area(
-                        container(vertical_space())
+                        container(space::vertical())
                             .width(Length::Fill)
                             .height(Length::Fill)
                     )
@@ -1643,7 +1658,7 @@ impl cosmic::Application for CosmicAppLibrary {
             .width(Length::Shrink)
             .height(Length::Fill),
             mouse_area(
-                container(horizontal_space().width(Length::Fixed(1.0)))
+                container(space::horizontal().width(Length::Fixed(1.0)))
                     .width(Length::Fill)
                     .height(Length::Fill)
             )
