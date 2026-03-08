@@ -21,3 +21,5 @@ system = Järjestelmä
 local = Paikallinen
 create-new = Luo uusi kansio
 nix = Nix
+delete-folder = Poistetaanko kansio?
+    .msg = Tämän kansion poistaminen siirtää sovelluskuvakkeet Kirjastoon.
