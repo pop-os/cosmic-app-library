@@ -1592,7 +1592,7 @@ impl cosmic::Application for CosmicAppLibrary {
 
         let content = column![
             top_row,
-            app_scrollable,
+            row![app_scrollable, vertical().height(Length::Fixed(444.))],
             container(horizontal_rule(1))
                 .padding([space_none, space_xxl])
                 .width(Length::Fill),
