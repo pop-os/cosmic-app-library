@@ -61,6 +61,7 @@ use cosmic::{
             popup::{SctkPopupSettings, SctkPositioner},
         },
     },
+    iced_widget::stack,
     iced_winit::commands::{
         self,
         activation::request_token,
@@ -1601,7 +1602,7 @@ impl cosmic::Application for CosmicAppLibrary {
         .align_x(Alignment::Center);
 
         let window = container(content)
-            .height(Length::Fill)
+            .height(Length::Fixed(690.))
             .max_height(690)
             .max_width(1200.0)
             .class(theme::Container::Custom(Box::new(|theme| {
@@ -1623,46 +1624,19 @@ impl cosmic::Application for CosmicAppLibrary {
             })))
             .center_x(Length::Fill)
             .width(Length::Fixed(1200.));
-        row![
+        stack![
             mouse_area(
-                container(space::horizontal().width(Length::Fixed(1.0)))
+                container(space::horizontal().width(Length::Fill))
                     .width(Length::Fill)
                     .height(Length::Fill)
             )
             .on_press(Message::Hide),
-            container(
-                column![
-                    mouse_area(
-                        container(space::vertical())
-                            .width(Length::Fill)
-                            .height(Length::Fixed(self.margin + 16.))
-                    )
-                    .on_press(Message::Hide),
-                    container(
-                        mouse_area(window)
-                            .on_release(Message::CloseContextMenu)
-                            .on_right_release(Message::CloseContextMenu)
-                    )
-                    .width(Length::Shrink)
-                    .height(Length::Shrink),
-                    mouse_area(
-                        container(space::vertical())
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                    )
-                    .on_press(Message::Hide)
-                ]
-                .height(Length::Fill)
+            column!(
+                space::vertical().height(Length::Fixed(self.margin + 16.)),
+                mouse_area(window).on_press(Message::CloseContextMenu),
             )
-            .max_width(1200.0)
-            .width(Length::Shrink)
-            .height(Length::Fill),
-            mouse_area(
-                container(space::horizontal().width(Length::Fixed(1.0)))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-            )
-            .on_press(Message::Hide),
+            .align_x(Alignment::Center)
+            .width(Length::Fill)
         ]
         .width(Length::Fill)
         .height(Length::Fill)
