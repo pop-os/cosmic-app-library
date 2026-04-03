@@ -10,21 +10,19 @@ use cosmic::{
         Size, Vector,
         alignment::Vertical,
         clipboard::mime::{AllowedMimeTypes, AsMimeTypes},
+        core::{
+            Alignment, Clipboard, Event, Length, Rectangle, Shell, Widget,
+            alignment::Horizontal,
+            event, layout, mouse, overlay, renderer,
+            widget::{Operation, Tree, tree},
+        },
+        widget::{column, text},
     },
-    iced_core::alignment::Horizontal,
     widget::dnd_source,
 };
 
-use cosmic::iced_core::{
-    Alignment, Clipboard, Event, Length, Rectangle, Shell, Widget, event, layout, mouse, overlay,
-    renderer,
-};
-
 use cosmic::{
-    Element,
-    iced::widget::{column, text},
-    iced_core::widget::{Operation, Tree, tree},
-    theme,
+    Element, theme,
     widget::{button, container},
 };
 
@@ -172,7 +170,7 @@ where
         tree.diff_children(children.as_mut_slice());
     }
 
-    fn size(&self) -> cosmic::iced_core::Size<Length> {
+    fn size(&self) -> cosmic::iced::core::Size<Length> {
         self.content.as_widget().size()
     }
 
@@ -215,7 +213,7 @@ where
         cursor_position: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        use cosmic::iced_core::Renderer;
+        use cosmic::iced::core::Renderer;
         self.content.as_widget().draw(
             &tree.children[0],
             renderer,
