@@ -60,33 +60,20 @@ impl<'a, Message: Clone + 'static> ApplicationButton<'a, Message> {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        let (source_icon, source_suffix_len) = match source {
-            Some((source, source_icon_handle)) => {
-                let source_name = source.to_string();
-                (
-                    source_icon_handle.as_ref().map(|i| {
-                        Element::from(
-                            container(app_source_icon(i.clone()))
-                                .class(cosmic::theme::Container::Card)
-                                .width(Length::Fixed(24.0))
-                                .height(Length::Fixed(24.0))
-                                .align_x(Horizontal::Center)
-                                .align_y(Vertical::Center),
-                        )
-                    }),
-                    source_name.len().saturating_add(3), // 3 for the parentheses
+        let source_icon = match source {
+            Some((_source, source_icon_handle)) => source_icon_handle.as_ref().map(|i| {
+                Element::from(
+                    container(app_source_icon(i.clone()))
+                        .class(cosmic::theme::Container::Card)
+                        .width(Length::Fixed(24.0))
+                        .height(Length::Fixed(24.0))
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center),
                 )
-            }
-            None => (None, 0),
+            }),
+            None => None,
         };
-        let max_name_len = 27 - source_suffix_len;
-        let name = if name.len() > max_name_len {
-            if let Some((source, ..)) = source {
-                format!("{name:.17}... ({source})")
-            } else {
-                format!("{name:.24}...")
-            }
-        } else if let Some((source, ..)) = source {
+        let name = if let Some((source, ..)) = source {
             format!("{name} ({source})")
         } else {
             name.to_string()
@@ -100,12 +87,20 @@ impl<'a, Message: Clone + 'static> ApplicationButton<'a, Message> {
                         .icon()
                         .width(Length::Fixed(72.0))
                         .height(Length::Fixed(72.0)),
-                    container(text(name).size(14.0).width(Length::Shrink))
-                        .align_x(Horizontal::Center)
-                        .width(Length::Fill)
-                        .height(Length::Fixed(40.0))
+                    container(
+                        text(name)
+                            .size(14.0)
+                            .width(Length::Fill)
+                            .center()
+                            .wrapping(cosmic::iced::core::text::Wrapping::WordOrGlyph)
+                            .ellipsize(cosmic::iced::core::text::Ellipsize::End(
+                                cosmic::iced::core::text::EllipsizeHeightLimit::Lines(2),
+                            )),
+                    )
+                    .align_x(Horizontal::Center)
+                    .width(Length::Fill)
+                    .height(Length::Fixed(40.0))
                 ]
-                .width(Length::Fixed(120.0))
                 .height(Length::Fixed(120.0))
                 .spacing(space_xxs)
                 .align_x(Alignment::Center)
