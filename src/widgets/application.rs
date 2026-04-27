@@ -1,35 +1,29 @@
 //! A widget that can be dragged and dropped.
 
-use core::str;
-use std::rc::Rc;
-use std::{borrow::Cow, cell::RefCell, iter, path::PathBuf, str::FromStr};
-
-use cosmic::widget::{self, icon};
-use cosmic::{
-    iced::{
-        Size, Vector,
-        alignment::Vertical,
-        clipboard::mime::{AllowedMimeTypes, AsMimeTypes},
-        core::{
-            Alignment, Clipboard, Event, Length, Rectangle, Shell, Widget,
-            alignment::Horizontal,
-            event, layout, mouse, overlay, renderer,
-            widget::{Operation, Tree, tree},
-        },
-        widget::{column, text},
-    },
-    widget::dnd_source,
-};
-
-use cosmic::{
-    Element, theme,
-    widget::{button, container},
-};
-
 use crate::app::AppSource;
+use core::str;
+use cosmic::iced::alignment::Vertical;
+use cosmic::iced::clipboard::mime::{AllowedMimeTypes, AsMimeTypes};
+use cosmic::iced::core::alignment::Horizontal;
+use cosmic::iced::core::widget::{Operation, Tree, tree};
+use cosmic::iced::core::{
+    Alignment, Clipboard, Event, Length, Rectangle, Shell, Widget, layout, mouse, overlay, renderer,
+};
+use cosmic::iced::widget::{column, text};
+use cosmic::iced::{Size, Vector};
+use cosmic::widget::{
+    button, container, dnd_source, icon, {self},
+};
+use cosmic::{Element, theme};
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::iter;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::str::FromStr;
 
 pub const MIME_TYPE: &str = "text/uri-list";
-const DRAG_THRESHOLD: f32 = 25.0;
+
 /// A widget that can be dragged and dropped.
 #[allow(missing_debug_implementations)]
 pub struct ApplicationButton<'a, Message> {
@@ -43,6 +37,7 @@ pub struct ApplicationButton<'a, Message> {
 impl<'a, Message: Clone + 'static> ApplicationButton<'a, Message> {
     /// Creates a new [`ApplicationButton`].
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         widget_id: widget::Id,
         name: &str,
@@ -347,6 +342,7 @@ where
 }
 
 /// Computes the layout of a [`ApplicationButton`].
+#[allow(clippy::too_many_arguments)]
 pub fn layout<'a, Renderer, M>(
     renderer: &Renderer,
     limits: &layout::Limits,
