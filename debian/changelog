@@ -1,4 +1,10 @@
-cosmic-app-library (0.1.0) UNRELEASED; urgency=medium
+cosmic-app-library (1.0.12) noble; urgency=medium
+
+  * Update debian changelog
+
+ -- Michael Murphy <mmstick@pop-os>  Mon, 27 Apr 2026 18:14:23 +0200
+
+cosmic-app-library (0.1.0) noble; urgency=medium
 
   * Initial release.
 
