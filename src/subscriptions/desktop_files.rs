@@ -1,8 +1,7 @@
-use cosmic::iced::{
-    Subscription,
-    futures::{self, SinkExt},
-    stream,
+use cosmic::iced::futures::{
+    SinkExt, {self},
 };
+use cosmic::iced::{Subscription, stream};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fmt::Debug;
 use std::hash::Hash;

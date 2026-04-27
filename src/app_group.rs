@@ -1,13 +1,13 @@
-use std::{sync::Arc, vec};
-
-use cosmic::{
-    cosmic_config::{self, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry},
-    desktop::DesktopEntryData,
+use crate::config::APP_ID;
+use crate::fl;
+use cosmic::cosmic_config::cosmic_config_derive::CosmicConfigEntry;
+use cosmic::cosmic_config::{
+    CosmicConfigEntry, {self},
 };
+use cosmic::desktop::DesktopEntryData;
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
-
-use crate::{config::APP_ID, fl};
+use std::sync::{Arc, LazyLock};
+use std::vec;
 
 static HOME: LazyLock<[AppGroup; 1]> = LazyLock::new(|| {
     [AppGroup {

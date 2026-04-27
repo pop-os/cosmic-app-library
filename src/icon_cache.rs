@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use cosmic::widget::icon;
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct IconCacheKey {

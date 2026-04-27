@@ -1,12 +1,10 @@
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Display},
-    path::{Path, PathBuf},
-    rc::Rc,
-    str::FromStr,
-    sync::{Arc, LazyLock},
-    time::{Duration, Instant},
-};
+use std::collections::HashMap;
+use std::fmt::{Debug, Display};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::str::FromStr;
+use std::sync::{Arc, LazyLock};
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use cosmic::{
@@ -14,7 +12,6 @@ use cosmic::{
     app::{Core, CosmicFlags, Settings, Task},
     cctk::sctk::{
         self,
-        data_device_manager::data_offer::DataDeviceOfferInner,
         shell::wlr_layer::{Anchor, KeyboardInteractivity},
     },
     cosmic_config::{Config, CosmicConfigEntry},
@@ -30,10 +27,8 @@ use cosmic::{
             data_device::ActionInner,
         },*/
         widget::{
-            column, container, mouse_area, row,
-            rule::horizontal as horizontal_rule,
+            column, container, mouse_area, row, rule::horizontal as horizontal_rule,
             scrollable::RelativeOffset,
-            space::{horizontal, vertical},
         },
         window::Event as WindowEvent,
     },
@@ -69,7 +64,7 @@ use cosmic::{
         },
         widget::stack,
     },
-    keyboard_nav, surface,
+    keyboard_nav,
     theme::{self, Button, TextInput},
     widget::{
         self, Column,
@@ -87,12 +82,10 @@ use log::error;
 use serde::{Deserialize, Serialize};
 use switcheroo_control::Gpu;
 
-use crate::{
-    app_group::AppLibraryConfig,
-    fl,
-    subscriptions::desktop_files::desktop_files,
-    widgets::application::{AppletString, ApplicationButton},
-};
+use crate::app_group::AppLibraryConfig;
+use crate::fl;
+use crate::subscriptions::desktop_files::desktop_files;
+use crate::widgets::application::{AppletString, ApplicationButton};
 
 // popovers should show options, but also the desktop info options
 // should be a way to add apps to groups
@@ -439,16 +432,6 @@ enum Message {
     AppListConfig(AppListConfig),
     Opened(Size, SurfaceId),
     Overlap(OverlapNotifyEvent),
-    Surface(surface::Action),
-}
-
-#[derive(Clone)]
-struct DndCommand(Arc<Box<dyn Send + Sync + Fn() -> DataDeviceOfferInner>>);
-
-impl Debug for DndCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DndCommand").finish()
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -1098,11 +1081,6 @@ impl cosmic::Application for CosmicAppLibrary {
                 }
                 _ => {}
             },
-            Message::Surface(a) => {
-                return cosmic::task::message(cosmic::Action::Cosmic(
-                    cosmic::app::Action::Surface(a),
-                ));
-            }
         }
         Task::none()
     }
@@ -1172,7 +1150,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     list_column.push(
                         menu_button(text::body(format!(
                             "{} {}",
-                            fl!("run-on", gpu = (&gpu.name)),
+                            fl!("run-on", gpu = gpu.name.as_str()),
                             if j == default_idx {
                                 fl!("run-on-default")
                             } else {
