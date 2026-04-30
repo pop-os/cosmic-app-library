@@ -41,6 +41,7 @@ use cosmic::{
                 wayland::{self, LayerEvent},
             },
             keyboard::{Key, key::Named},
+            text::{Ellipsize, EllipsizeHeightLimit},
             widget::operation::{
                 self,
                 focusable::{find_focused, focus},
@@ -1332,11 +1333,21 @@ impl cosmic::Application for CosmicAppLibrary {
                             .on_clear(Message::EditName(String::new()))
                             .on_submit(|_| Message::SubmitName)
                             .id(EDIT_GROUP_ID.clone())
-                            .width(Length::Fixed(200.0))
+                            .width(Length::Fill)
                             .size(14),
                     )
+                    .width(Length::Fill)
+                    .center_x(Length::FillPortion(8))
                 } else {
-                    container(text(cur_group.name()).size(24))
+                    container(
+                        text(cur_group.name())
+                            .size(24)
+                            .width(Length::Fill)
+                            .center()
+                            .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1))),
+                    )
+                    .width(Length::Fill)
+                    .center_x(Length::FillPortion(8))
                 },
                 row![
                     space::horizontal(),
@@ -1475,7 +1486,10 @@ impl cosmic::Application for CosmicAppLibrary {
                             .height(Length::Fixed(group_icon_size))
                     )
                     .padding(space_xxs),
-                    text::body(ADD_GROUP.as_str()).width(Length::Shrink)
+                    text::body(ADD_GROUP.as_str())
+                        .width(Length::Fill)
+                        .center()
+                        .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)))
                 ]
                 .align_x(Alignment::Center)
                 .width(Length::Fill),
@@ -1507,7 +1521,10 @@ impl cosmic::Application for CosmicAppLibrary {
                                         .height(Length::Fixed(group_icon_size))
                                 )
                                 .padding(space_xxs),
-                                text::body(group.name()).width(Length::Shrink)
+                                text::body(group.name())
+                                    .width(Length::Fill)
+                                    .center()
+                                    .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)))
                             ]
                             .align_x(Alignment::Center)
                             .width(Length::Fill),
