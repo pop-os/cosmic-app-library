@@ -7,6 +7,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
+use cosmic::widget::reorderable_flex_row;
 use cosmic::{
     Element,
     app::{Core, CosmicFlags, Settings, Task},
@@ -390,6 +391,13 @@ impl CosmicAppLibrary {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum GroupRowKey {
+    Home,
+    Custom(crate::app_group::AppGroup),
+    NewGroup,
+}
+
 #[derive(Clone, Debug)]
 enum Message {
     Activate,
@@ -404,6 +412,7 @@ enum Message {
     StartCurAppFocus,
     ActivationToken(Option<String>, String, String, Option<usize>, bool),
     SelectGroup(usize),
+    ReorderGroup(Vec<GroupRowKey>),
     Delete(usize),
     ConfirmDelete,
     CancelDelete,
@@ -807,6 +816,48 @@ impl cosmic::Application for CosmicAppLibrary {
                     cmds.push(text_input::focus(SEARCH_ID.clone()));
                 }
                 return iced::Task::batch(cmds);
+            }
+            Message::ReorderGroup(new_order) => {
+                // save previously selected group
+                let prev_selected_name = (self.cur_group > 0)
+                    .then(|| {
+                        self.config
+                            .groups
+                            .get(self.cur_group - 1)
+                            .map(|g| g.name.clone())
+                    })
+                    .flatten();
+
+                let reordered: Vec<crate::app_group::AppGroup> = new_order
+                    .into_iter()
+                    .filter_map(|key| match key {
+                        GroupRowKey::Custom(group) => Some(group),
+                        GroupRowKey::Home | GroupRowKey::NewGroup => None,
+                    })
+                    .collect();
+
+                if reordered.len() != self.config.groups.len() {
+                    return Task::none();
+                }
+
+                self.config.groups = reordered;
+
+                // make sure to select the previously selected group after reorder
+                if let Some(name) = prev_selected_name {
+                    self.cur_group = self
+                        .config
+                        .groups
+                        .iter()
+                        .position(|g| g.name == name)
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
+                }
+
+                if let Some(helper) = self.helper.as_ref()
+                    && let Err(err) = self.config.write_entry(helper)
+                {
+                    error!("{:?}", err);
+                }
             }
             Message::LoadApps => {
                 return self.filter_apps();
@@ -1458,116 +1509,117 @@ impl cosmic::Application for CosmicAppLibrary {
         .max_height(444.0);
 
         // TODO use the spacing variables from the theme
-        let (group_icon_size, h_padding, group_width, chunks) = if self.config.groups().len() > 15 {
-            (16.0, space_xxs, 96.0, 11)
+        let (group_icon_size, h_padding, group_width) = if self.config.groups().len() > 15 {
+            (16.0, space_xxs, 96.0)
         } else {
-            (32.0, space_s, 128.0, 8)
+            (32.0, space_s, 128.0)
         };
         let group_height =
             group_icon_size + 21.0 + (space_none as f32) + (space_xxs as f32) + (space_s as f32);
 
-        let mut add_group_btn = Some(
-            button::custom(
-                column![
-                    container(
-                        icon::icon(icon::from_name("folder-new-symbolic").into())
-                            .width(Length::Fixed(group_icon_size))
-                            .height(Length::Fixed(group_icon_size))
+        let build_group_button = |group_index: usize, group: &crate::app_group::AppGroup| {
+            dnd_destination_for_data::<AppletString, Message>(
+                button::custom(
+                    column![
+                        container(
+                            icon::icon(from_name(group.icon.clone()).into())
+                                .width(Length::Fixed(group_icon_size))
+                                .height(Length::Fixed(group_icon_size))
+                        )
+                        .padding(space_xxs),
+                        text::body(group.name()).width(Length::Shrink)
+                    ]
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
+                )
+                .height(Length::Fixed(group_height))
+                .width(Length::Fixed(group_width))
+                .class(
+                    if self.offer_group == Some(group_index)
+                        || (self.cur_group == group_index && self.offer_group.is_none())
+                    {
+                        Button::Custom {
+                            active: Box::new(|focused, theme| {
+                                theme.pressed(focused, false, &Button::IconVertical)
+                            }),
+                            disabled: Box::new(|theme| theme.disabled(&Button::IconVertical)),
+                            hovered: Box::new(|focused, theme| {
+                                theme.hovered(focused, false, &Button::IconVertical)
+                            }),
+                            pressed: Box::new(|focused, theme| {
+                                theme.pressed(focused, false, &Button::IconVertical)
+                            }),
+                        }
+                    } else {
+                        Button::IconVertical
+                    },
+                )
+                .padding([space_none, h_padding, space_xxs, h_padding])
+                .on_press_maybe(
+                    self.menu
+                        .is_none()
+                        .then_some(Message::SelectGroup(group_index)),
+                ),
+                move |data, _| {
+                    Message::FinishDndOffer(
+                        group_index,
+                        data.and_then(|data| load_desktop_file(&[], data.0)),
                     )
-                    .padding(space_xxs),
-                    text::body(ADD_GROUP.as_str()).width(Length::Shrink)
-                ]
-                .align_x(Alignment::Center)
-                .width(Length::Fill),
+                },
             )
-            .height(Length::Fixed(group_height))
-            .width(Length::Fixed(group_width))
-            .class(theme::Button::IconVertical)
-            .padding([space_none, h_padding, space_xxs, h_padding])
-            .on_press(Message::StartNewGroup),
-        );
-        let mut group_rows: Vec<_> = self
-            .config
-            .groups()
-            .chunks(chunks)
-            .enumerate()
-            .map(|(chunk, groups)| {
-                let mut group_row = row![]
-                    .spacing(space_xxs)
-                    .padding([space_s, space_none])
-                    .align_y(Alignment::Center);
-                for (i, group) in groups.iter().enumerate() {
-                    let i = i + chunk * chunks;
-                    let group_button = dnd_destination_for_data::<AppletString, Message>(
-                        button::custom(
-                            column![
-                                container(
-                                    icon::icon(from_name(group.icon.clone()).into())
-                                        .width(Length::Fixed(group_icon_size))
-                                        .height(Length::Fixed(group_icon_size))
-                                )
-                                .padding(space_xxs),
-                                text::body(group.name()).width(Length::Shrink)
-                            ]
-                            .align_x(Alignment::Center)
-                            .width(Length::Fill),
-                        )
-                        .height(Length::Fixed(group_height))
-                        .width(Length::Fixed(group_width))
-                        .class(
-                            if self.offer_group == Some(i)
-                                || (self.cur_group == i && self.offer_group.is_none())
-                            {
-                                // TODO customize the IconVertical to highlight in the way we need
-                                Button::Custom {
-                                    active: Box::new(|focused, theme| {
-                                        theme.pressed(focused, false, &Button::IconVertical)
-                                    }),
-                                    disabled: Box::new(|theme| {
-                                        theme.disabled(&Button::IconVertical)
-                                    }),
-                                    hovered: Box::new(|focused, theme| {
-                                        theme.hovered(focused, false, &Button::IconVertical)
-                                    }),
-                                    pressed: Box::new(|focused, theme| {
-                                        theme.pressed(focused, false, &Button::IconVertical)
-                                    }),
-                                }
-                            } else {
-                                Button::IconVertical
-                            },
-                        )
-                        .padding([space_none, h_padding, space_xxs, h_padding])
-                        .on_press_maybe(self.menu.is_none().then_some(Message::SelectGroup(i))),
-                        move |data, _| {
-                            Message::FinishDndOffer(
-                                i,
-                                data.and_then(|data| load_desktop_file(&[], data.0)),
-                            )
-                        },
-                    )
-                    .on_enter(move |_, _, _| Message::StartDndOffer(i))
-                    .on_leave(move || Message::LeaveDndOffer(i));
-
-                    group_row = group_row.push(group_button);
-                }
-                if groups.len() < chunks {
-                    group_row = group_row.push(add_group_btn.take().unwrap());
-                }
-                group_row
-            })
-            .collect();
-
-        if let Some(add_group_button) = add_group_btn.take() {
-            group_rows.push(
-                row![add_group_button]
-                    .spacing(8)
-                    .padding([space_s, space_none])
-                    .align_y(Alignment::Center),
-            );
+            .drag_id((group_index as u64) + 1)
+            .on_enter(move |_, _, _| Message::StartDndOffer(group_index))
+            .on_leave(move || Message::LeaveDndOffer(group_index))
         };
-        let group_rows =
-            Column::with_children(group_rows.into_iter().map(|r| r.into()).collect_vec());
+
+        let add_group_btn = button::custom(
+            column![
+                container(
+                    icon::icon(icon::from_name("folder-new-symbolic").into())
+                        .width(Length::Fixed(group_icon_size))
+                        .height(Length::Fixed(group_icon_size))
+                )
+                .padding(space_xxs),
+                text::body(ADD_GROUP.as_str()).width(Length::Shrink)
+            ]
+            .align_x(Alignment::Center)
+            .width(Length::Fill),
+        )
+        .height(Length::Fixed(group_height))
+        .width(Length::Fixed(group_width))
+        .class(theme::Button::IconVertical)
+        .padding([space_none, h_padding, space_xxs, h_padding])
+        .on_press(Message::StartNewGroup);
+
+        let group_row = self
+            .config
+            .groups
+            .iter()
+            .enumerate()
+            .fold(
+                self.config
+                    .groups()
+                    .first()
+                    .copied()
+                    .map(|group| {
+                        reorderable_flex_row::<GroupRowKey, Message>(Message::ReorderGroup)
+                            .spacing(space_xxs)
+                            .padding([space_s, space_none])
+                            .push_locked(GroupRowKey::Home, build_group_button(0, group))
+                    })
+                    .unwrap_or_else(|| {
+                        reorderable_flex_row::<GroupRowKey, Message>(Message::ReorderGroup)
+                            .spacing(space_xxs)
+                            .padding([space_s, space_none])
+                    }),
+                |row, (group_index, group)| {
+                    row.push(
+                        GroupRowKey::Custom(group.clone()),
+                        build_group_button(group_index + 1, group),
+                    )
+                },
+            )
+            .push_locked(GroupRowKey::NewGroup, add_group_btn);
 
         let content = column![
             top_row,
@@ -1575,7 +1627,7 @@ impl cosmic::Application for CosmicAppLibrary {
             container(horizontal_rule(1))
                 .padding([space_none, space_xxl])
                 .width(Length::Fill),
-            group_rows
+            group_row
         ]
         .align_x(Alignment::Center);
 
@@ -1703,7 +1755,7 @@ impl cosmic::Application for CosmicAppLibrary {
         core.set_keyboard_nav(false);
         let helper = AppLibraryConfig::helper();
 
-        let mut config: AppLibraryConfig = helper
+        let config: AppLibraryConfig = helper
             .as_ref()
             .map(|helper| {
                 AppLibraryConfig::get_entry(helper).unwrap_or_else(|(errors, config)| {
@@ -1714,7 +1766,6 @@ impl cosmic::Application for CosmicAppLibrary {
                 })
             })
             .unwrap_or_default();
-        config.groups.sort();
         let scrollable_id = Id::new(
             config
                 .groups()
