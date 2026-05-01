@@ -9,15 +9,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
 use std::vec;
 
-static HOME: LazyLock<[AppGroup; 1]> = LazyLock::new(|| {
-    [AppGroup {
-        name: "cosmic-library-home".to_string(),
-        icon: "user-home-symbolic".to_string(),
-        filter: FilterType::None,
-    }]
+static HOME: LazyLock<AppGroup> = LazyLock::new(|| AppGroup {
+    name: "cosmic-library-home".to_string(),
+    icon: "user-home-symbolic".to_string(),
+    filter: FilterType::None,
 });
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FilterType {
     /// A list of application IDs to include in the group.
     AppIds(Vec<String>),
@@ -66,7 +64,7 @@ impl PartialOrd for FilterType {
 }
 
 // Object holding the state
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AppGroup {
     pub name: String,
     pub icon: String,
@@ -181,82 +179,72 @@ impl AppLibraryConfig {
         cosmic_config::Config::new(APP_ID, Self::version()).ok()
     }
 
+    pub fn home() -> &'static AppGroup {
+        &HOME
+    }
+
     pub fn add(&mut self, name: String) {
         self.groups.push(AppGroup {
             name,
             icon: "folder-symbolic".to_string(),
             filter: FilterType::AppIds(Vec::new()),
         });
-        self.groups.sort();
     }
 
     pub fn remove(&mut self, i: usize) {
-        if i == 0 {
-            return;
-        }
-        if i - 1 < self.groups.len() {
-            self.groups.remove(i - 1);
+        if i < self.groups.len() {
+            self.groups.remove(i);
         }
     }
 
     pub fn set_name(&mut self, i: usize, name: String) {
-        if i == 0 {
-            return;
-        }
-        if i - 1 < self.groups.len() {
-            self.groups[i - 1].name = name;
+        if let Some(group) = self.groups.get_mut(i) {
+            group.name = name;
         }
     }
 
-    pub fn remove_entry(&mut self, i: usize, id: &str) {
-        if i == 0 {
+    pub fn remove_entry(&mut self, group: Option<usize>, id: &str) {
+        let Some(group) = group.and_then(|i| self.groups.get_mut(i)) else {
             return;
+        };
+        match &mut group.filter {
+            FilterType::AppIds(ids) => ids.retain(|conf_id| conf_id != id),
+            FilterType::Categories {
+                exclude, include, ..
+            } => {
+                include.retain(|conf_id| conf_id != id);
+                exclude.retain(|conf_id| conf_id != id);
+                exclude.push(id.to_string());
+            }
+            FilterType::None => {}
         }
-        if let Some(group) = self.groups.get_mut(i - 1) {
+    }
+
+    pub fn add_entry(&mut self, group: Option<usize>, id: &str) {
+        if let Some(group) = group.and_then(|i| self.groups.get_mut(i)) {
             match &mut group.filter {
-                FilterType::AppIds(ids) => ids.retain(|conf_id| conf_id != id),
+                FilterType::AppIds(ids) => {
+                    if ids.iter().all(|s| s != id) {
+                        ids.push(id.to_string());
+                    }
+                }
                 FilterType::Categories {
                     exclude, include, ..
                 } => {
                     include.retain(|conf_id| conf_id != id);
                     exclude.retain(|conf_id| conf_id != id);
-                    exclude.push(id.to_string());
+                    include.push(id.to_string());
                 }
                 FilterType::None => {}
             }
-        }
-        if i - 1 < self.groups.len()
-            && let FilterType::AppIds(ids) = &mut self.groups[i - 1].filter
-        {
-            ids.retain(|x| x != id);
-        }
-    }
-
-    pub fn add_entry(&mut self, i: usize, id: &str) {
-        if i > 0 && i - 1 < self.groups.len() {
-            if let FilterType::AppIds(ids) = &mut self.groups[i - 1].filter {
-                if ids.iter().all(|s| s != id) {
-                    ids.push(id.to_string());
-                }
-            } else if let FilterType::Categories {
-                exclude, include, ..
-            } = &mut self.groups[i - 1].filter
-            {
-                include.retain(|conf_id| conf_id != id);
-                exclude.retain(|conf_id| conf_id != id);
-                include.push(id.to_string());
-            }
         } else {
-            // add to filter of all groups, forcing it to the Home group
             for group in &mut self.groups {
                 match &mut group.filter {
                     FilterType::AppIds(ids) => {
                         ids.retain(|conf_id| conf_id != id);
                     }
                     FilterType::Categories {
-                        categories: _,
-                        exclude,
-                        include,
+                        exclude, include, ..
                     } => {
                         include.retain(|conf_id| conf_id != id);
                         if exclude.iter().all(|conf_id| conf_id != id) {
@@ -269,33 +257,20 @@ impl AppLibraryConfig {
         }
     }
 
-    pub fn groups(&self) -> Vec<&AppGroup> {
-        HOME.iter().chain(&self.groups).collect()
-    }
-
     pub fn filtered(
         &self,
-        i: usize,
+        group: Option<usize>,
         input_value: &str,
         entries: &[Arc<DesktopEntryData>],
     ) -> Vec<Arc<DesktopEntryData>> {
-        if i == 0 {
-            HOME[0].filtered(input_value, &self.groups, entries)
-        } else {
-            self._filtered(i - 1, input_value, entries)
+        match group {
+            None => HOME.filtered(input_value, &self.groups, entries),
+            Some(i) => self
+                .groups
+                .get(i)
+                .map(|g| g.filtered(input_value, &Vec::new(), entries))
+                .unwrap_or_default(),
         }
-    }
-
-    pub fn _filtered(
-        &self,
-        i: usize,
-        input_value: &str,
-        entries: &[Arc<DesktopEntryData>],
-    ) -> Vec<Arc<DesktopEntryData>> {
-        self.groups
-            .get(i)
-            .map(|g| g.filtered(input_value, &Vec::new(), entries))
-            .unwrap_or_default()
     }
 }
 
