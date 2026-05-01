@@ -1302,21 +1302,23 @@ impl cosmic::Application for CosmicAppLibrary {
                     .height(Length::Fixed(1.0))
                     .into();
             };
+            let name_available = !self.config.name_exists(group_name, None);
+            let mut name_input = text_input("", group_name)
+                .label(&*NEW_GROUP_PLACEHOLDER)
+                .on_input(Message::NewGroup)
+                .width(Length::Fixed(432.0))
+                .size(14)
+                .id(NEW_GROUP_ID.clone());
+            if name_available {
+                name_input = name_input.on_submit(|_| Message::SubmitNewGroup);
+            }
             let dialog = widget::dialog::dialog()
                 .title(CREATE_NEW.as_str())
-                .control(
-                    text_input("", group_name)
-                        .label(&*NEW_GROUP_PLACEHOLDER)
-                        .on_input(Message::NewGroup)
-                        .on_submit(|_| Message::SubmitNewGroup)
-                        .width(Length::Fixed(432.0))
-                        .size(14)
-                        .id(NEW_GROUP_ID.clone()),
-                )
+                .control(name_input)
                 .primary_action(
                     button::custom(text::body(SAVE.as_str()).center().width(Length::Fill))
                         .class(Button::Suggested)
-                        .on_press(Message::SubmitNewGroup)
+                        .on_press_maybe(name_available.then_some(Message::SubmitNewGroup))
                         .padding([space_xxs, space_s])
                         .width(142),
                 )
