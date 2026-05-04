@@ -182,28 +182,11 @@ impl AppLibraryConfig {
     }
 
     pub fn add(&mut self, name: String) {
-        if self.name_exists(&name, None) {
-            return;
-        }
         self.groups.push(AppGroup {
             name,
             icon: "folder-symbolic".to_string(),
             filter: FilterType::AppIds(Vec::new()),
         });
-    }
-
-    /// Returns whether `name` is already taken by Home or by an existing group.
-    /// `skip_index` is the row index (0 = Home, 1..=N = custom groups) to ignore,
-    /// so a rename that doesn't change the name doesn't collide with itself.
-    pub fn name_exists(&self, name: &str, skip_index: Option<usize>) -> bool {
-        let lowered = name.to_lowercase();
-        if skip_index != Some(0) && HOME[0].name.to_lowercase() == lowered {
-            return true;
-        }
-        self.groups
-            .iter()
-            .enumerate()
-            .any(|(i, g)| skip_index != Some(i + 1) && g.name.to_lowercase() == lowered)
     }
 
     pub fn remove(&mut self, i: usize) {
@@ -217,9 +200,6 @@ impl AppLibraryConfig {
 
     pub fn set_name(&mut self, i: usize, name: String) {
         if i == 0 {
-            return;
-        }
-        if self.name_exists(&name, Some(i)) {
             return;
         }
         if i - 1 < self.groups.len() {

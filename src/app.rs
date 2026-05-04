@@ -394,7 +394,7 @@ impl CosmicAppLibrary {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum GroupRowKey {
     Home,
-    Custom(crate::app_group::AppGroup),
+    Custom(usize),
     NewGroup,
 }
 
@@ -804,13 +804,7 @@ impl cosmic::Application for CosmicAppLibrary {
                 self.search_value.clear();
                 self.cur_group = i;
                 self.scroll_offset = 0.0;
-                self.scrollable_id = Id::new(
-                    self.config
-                        .groups()
-                        .get(self.cur_group)
-                        .map(|g| g.name.clone())
-                        .unwrap_or_else(|| "unknown-group".to_string()),
-                );
+                self.scrollable_id = Id::new(format!("group-{}", self.cur_group));
                 let mut cmds = vec![self.filter_apps()];
                 if self.cur_group == 0 {
                     cmds.push(text_input::focus(SEARCH_ID.clone()));
@@ -818,22 +812,23 @@ impl cosmic::Application for CosmicAppLibrary {
                 return iced::Task::batch(cmds);
             }
             Message::ReorderGroup(new_order) => {
-                // save previously selected group
-                let prev_selected_name = (self.cur_group > 0)
-                    .then(|| {
-                        self.config
-                            .groups
-                            .get(self.cur_group - 1)
-                            .map(|g| g.name.clone())
-                    })
-                    .flatten();
+                let prev_selected_old_index = (self.cur_group > 0).then(|| self.cur_group - 1);
 
-                let reordered: Vec<crate::app_group::AppGroup> = new_order
+                let old_indices: Vec<usize> = new_order
                     .into_iter()
                     .filter_map(|key| match key {
-                        GroupRowKey::Custom(group) => Some(group),
+                        GroupRowKey::Custom(idx) => Some(idx),
                         GroupRowKey::Home | GroupRowKey::NewGroup => None,
                     })
+                    .collect();
+
+                if old_indices.len() != self.config.groups.len() {
+                    return Task::none();
+                }
+
+                let reordered: Vec<crate::app_group::AppGroup> = old_indices
+                    .iter()
+                    .filter_map(|&i| self.config.groups.get(i).cloned())
                     .collect();
 
                 if reordered.len() != self.config.groups.len() {
@@ -842,13 +837,10 @@ impl cosmic::Application for CosmicAppLibrary {
 
                 self.config.groups = reordered;
 
-                // make sure to select the previously selected group after reorder
-                if let Some(name) = prev_selected_name {
-                    self.cur_group = self
-                        .config
-                        .groups
+                if let Some(old_idx) = prev_selected_old_index {
+                    self.cur_group = old_indices
                         .iter()
-                        .position(|g| g.name == name)
+                        .position(|&i| i == old_idx)
                         .map(|i| i + 1)
                         .unwrap_or(0);
                 }
@@ -1302,23 +1294,21 @@ impl cosmic::Application for CosmicAppLibrary {
                     .height(Length::Fixed(1.0))
                     .into();
             };
-            let name_available = !self.config.name_exists(group_name, None);
-            let mut name_input = text_input("", group_name)
-                .label(&*NEW_GROUP_PLACEHOLDER)
-                .on_input(Message::NewGroup)
-                .width(Length::Fixed(432.0))
-                .size(14)
-                .id(NEW_GROUP_ID.clone());
-            if name_available {
-                name_input = name_input.on_submit(|_| Message::SubmitNewGroup);
-            }
             let dialog = widget::dialog::dialog()
                 .title(CREATE_NEW.as_str())
-                .control(name_input)
+                .control(
+                    text_input("", group_name)
+                        .label(&*NEW_GROUP_PLACEHOLDER)
+                        .on_input(Message::NewGroup)
+                        .on_submit(|_| Message::SubmitNewGroup)
+                        .width(Length::Fixed(432.0))
+                        .size(14)
+                        .id(NEW_GROUP_ID.clone()),
+                )
                 .primary_action(
                     button::custom(text::body(SAVE.as_str()).center().width(Length::Fill))
                         .class(Button::Suggested)
-                        .on_press_maybe(name_available.then_some(Message::SubmitNewGroup))
+                        .on_press(Message::SubmitNewGroup)
                         .padding([space_xxs, space_s])
                         .width(142),
                 )
@@ -1616,7 +1606,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     }),
                 |row, (group_index, group)| {
                     row.push(
-                        GroupRowKey::Custom(group.clone()),
+                        GroupRowKey::Custom(group_index),
                         build_group_button(group_index + 1, group),
                     )
                 },
