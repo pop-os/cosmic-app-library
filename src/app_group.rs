@@ -17,7 +17,7 @@ static HOME: LazyLock<[AppGroup; 1]> = LazyLock::new(|| {
     }]
 });
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FilterType {
     /// A list of application IDs to include in the group.
     AppIds(Vec<String>),
@@ -66,7 +66,7 @@ impl PartialOrd for FilterType {
 }
 
 // Object holding the state
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AppGroup {
     pub name: String,
     pub icon: String,
@@ -187,7 +187,6 @@ impl AppLibraryConfig {
             icon: "folder-symbolic".to_string(),
             filter: FilterType::AppIds(Vec::new()),
         });
-        self.groups.sort();
     }
 
     pub fn remove(&mut self, i: usize) {
