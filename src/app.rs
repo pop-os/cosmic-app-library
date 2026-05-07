@@ -12,6 +12,7 @@ use cosmic::iced::platform_specific::shell::commands::layer_surface::set_padding
 use cosmic::iced::runtime::platform_specific::wayland::layer_surface::IcedMargin;
 use cosmic::iced::runtime::{Action, platform_specific, task};
 use cosmic::iced::window;
+use cosmic::widget::space::horizontal;
 use cosmic::{
     Element,
     app::{Core, CosmicFlags, Settings, Task},
@@ -351,12 +352,7 @@ impl CosmicAppLibrary {
                 }),
                 overlap_notify(SurfaceId::RESERVED, true),
                 fetch_gpus,
-            ])
-            .chain(text_input::focus(SEARCH_ID.clone()))
-            .chain(
-                iced_runtime::task::widget(find_focused())
-                    .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
-            );
+            ]);
         }
         Task::none()
     }
@@ -597,7 +593,6 @@ impl CosmicAppLibrary {
         self.hand_over.clear();
 
         iced::Task::batch(vec![
-            text_input::focus(SEARCH_ID.clone()),
             destroy_popup(*MENU_ID),
             destroy_layer_surface(*NEW_GROUP_WINDOW_ID),
             destroy_layer_surface(*DELETE_GROUP_WINDOW_ID),
@@ -767,35 +762,41 @@ impl cosmic::Application for CosmicAppLibrary {
                 self.search_value = value;
                 return self.filter_apps();
             }
-            Message::Layer(e, id) => match e {
-                LayerEvent::Focused => {
-                    if self.menu.is_none() {
-                        if id == SurfaceId::RESERVED {
-                            return text_input::focus(SEARCH_ID.clone());
-                        } else if id == *DELETE_GROUP_WINDOW_ID {
-                            return button::focus(SUBMIT_DELETE_ID.clone());
-                        } else if id == *NEW_GROUP_WINDOW_ID {
-                            return text_input::focus(NEW_GROUP_ID.clone());
+            Message::Layer(e, id) => {
+                match e {
+                    LayerEvent::Focused => {
+                        if self.menu.is_none() {
+                            if id == SurfaceId::RESERVED {
+                                return text_input::focus(SEARCH_ID.clone()).chain(
+                                    iced_runtime::task::widget(find_focused()).map(|id| {
+                                        cosmic::Action::App(Message::UpdateFocused(Some(id)))
+                                    }),
+                                );
+                            } else if id == *DELETE_GROUP_WINDOW_ID {
+                                return button::focus(SUBMIT_DELETE_ID.clone());
+                            } else if id == *NEW_GROUP_WINDOW_ID {
+                                return text_input::focus(NEW_GROUP_ID.clone());
+                            }
                         }
                     }
-                }
-                LayerEvent::Unfocused => {
-                    self.last_hide = Some(Instant::now());
-                    if matches!(self.surface_state, SurfaceState::Visible)
-                        && id == SurfaceId::RESERVED
-                        && self.menu.is_none()
-                        && self.new_group.is_none()
-                        && self.group_to_delete.is_none()
-                    {
-                        return self.hide();
+                    LayerEvent::Unfocused => {
+                        self.last_hide = Some(Instant::now());
+                        if matches!(self.surface_state, SurfaceState::Visible)
+                            && id == SurfaceId::RESERVED
+                            && self.menu.is_none()
+                            && self.new_group.is_none()
+                            && self.group_to_delete.is_none()
+                        {
+                            return self.hide();
+                        }
                     }
+                    LayerEvent::Done if id == SurfaceId::RESERVED => {
+                        // no need for commands here
+                        _ = self.hide();
+                    }
+                    _ => {}
                 }
-                LayerEvent::Done if id == SurfaceId::RESERVED => {
-                    // no need for commands here
-                    _ = self.hide();
-                }
-                _ => {}
-            },
+            }
             Message::Hide => {
                 return self.hide();
             }
@@ -1346,324 +1347,329 @@ impl cosmic::Application for CosmicAppLibrary {
                 .width(Length::Fixed(432.0));
 
             return autosize(dialog, DELETE_GROUP_AUTOSIZE_ID.clone()).into();
-        }
-
-        let cur_group = self.config.groups()[self.cur_group];
-        let top_row = if self.cur_group == 0 {
-            row![
-                container(
-                    search_input(SEARCH_PLACEHOLDER.as_str(), self.search_value.as_str())
-                        .on_input(Message::InputChanged)
-                        .on_paste(Message::InputChanged)
-                        .on_submit(|_| Message::StartCurAppFocus)
-                        .style(TextInput::Search)
-                        .width(Length::Fixed(400.0))
-                        .size(14)
-                        .id(SEARCH_ID.clone())
-                )
-                .align_y(Vertical::Center)
-                .height(Length::Fixed(96.0))
-            ]
-            .align_y(Alignment::Center)
-            .spacing(space_xxs)
-        } else {
-            row![
-                space::horizontal().width(Length::FillPortion(1)),
-                if let Some(edit_name) = self.edit_name.as_ref() {
-                    container(
-                        text_input(cur_group.name(), edit_name)
-                            .on_input(Message::EditName)
-                            .on_paste(Message::EditName)
-                            .on_clear(Message::EditName(String::new()))
-                            .on_submit(|_| Message::SubmitName)
-                            .id(EDIT_GROUP_ID.clone())
-                            .width(Length::Fixed(200.0))
-                            .size(14),
-                    )
-                } else {
-                    container(text(cur_group.name()).size(24))
-                },
+        } else if id == SurfaceId::RESERVED {
+            let cur_group = self.config.groups()[self.cur_group];
+            let top_row = if self.cur_group == 0 {
                 row![
-                    space::horizontal(),
-                    tooltip(
-                        {
-                            let mut b = button::custom(
-                                icon::icon(icon::from_name("edit-symbolic").into())
-                                    .width(Length::Fixed(32.0))
-                                    .height(Length::Fixed(32.0)),
-                            )
-                            .padding(space_xs)
-                            .class(Button::Icon);
-                            if self.edit_name.is_none() {
-                                b = b.on_press(Message::StartEditName(cur_group.name()));
-                            }
-                            container(b)
-                                .height(Length::Fixed(96.0))
-                                .align_y(Vertical::Center)
-                        },
-                        text(fl!("rename")),
-                        tooltip::Position::Bottom
-                    ),
-                    tooltip(
-                        container(
-                            button::custom(
-                                icon::icon(icon::from_name("edit-delete-symbolic").into())
-                                    .width(Length::Fixed(32.0))
-                                    .height(Length::Fixed(32.0)),
-                            )
-                            .padding(space_xs)
-                            .class(Button::Icon)
-                            .on_press(Message::Delete(self.cur_group))
-                        )
-                        .height(Length::Fixed(96.0))
-                        .align_y(Vertical::Center),
-                        text(fl!("delete")),
-                        tooltip::Position::Bottom
-                    )
-                ]
-                .spacing(space_xxs)
-                .width(Length::FillPortion(1))
-            ]
-            .padding([0, space_l])
-            .align_y(Alignment::Center)
-        };
-
-        // TODO grid widget in libcosmic
-        let app_grid_list: Vec<_> = self
-            .entry_path_input
-            .iter()
-            .zip(self.entry_ids.iter())
-            .zip(self.entry_icon_handles.iter())
-            .enumerate()
-            .map(|(i, ((entry, id), icon_handle))| {
-                let gpu_idx = self.gpus.as_ref().map(|gpus| {
-                    if entry.prefers_dgpu {
-                        gpus.iter().position(|gpu| !gpu.default).unwrap_or(0)
-                    } else {
-                        gpus.iter().position(|gpu| gpu.default).unwrap_or(0)
-                    }
-                });
-                let dup = entry
-                    .path
-                    .as_ref()
-                    .and_then(|path| self.duplicates.get(path));
-                let selected = self.menu.is_some_and(|m| m == i);
-
-                let b = ApplicationButton::new(
-                    id.clone(),
-                    &entry.name,
-                    icon_handle.clone(),
-                    &entry.path,
-                    move |rect| Message::OpenContextMenu(rect, i),
-                    if self.menu.is_none() {
-                        Some(Message::ActivateApp(i, gpu_idx))
-                    } else if selected {
-                        Some(Message::CloseContextMenu)
-                    } else {
-                        None
-                    },
-                    // TODO add icon and text if duplicated
-                    dup,
-                    selected,
-                    self.menu.is_none().then_some(Message::StartDrag(i)),
-                    self.menu.is_none().then_some(Message::FinishDrag(false)),
-                    self.menu.is_none().then_some(Message::CancelDrag),
-                );
-
-                b.into()
-            })
-            .chunks(7)
-            .into_iter()
-            .map(|row_chunk| {
-                let mut new_row = row_chunk.collect_vec();
-                let missing = 7 - new_row.len();
-                if missing > 0 {
-                    new_row.push(
-                        iced::widget::space::horizontal()
-                            .width(Length::FillPortion(missing.try_into().unwrap()))
-                            .into(),
-                    );
-                }
-                row(new_row).spacing(space_xxs).into()
-            })
-            .collect();
-
-        let app_scrollable = container(
-            scrollable(
-                column(app_grid_list)
-                    .width(Length::Fill)
-                    .spacing(space_xxs)
-                    // padding on top needed to avoid focus highlight clipping
-                    .padding([4, space_xxl, space_xxs, space_xxl]),
-            )
-            .on_scroll(|viewport| Message::ScrollYOffset(viewport.absolute_offset().y))
-            .id(self.scrollable_id.clone())
-            .height(Length::Fill),
-        )
-        .max_height(444.0);
-
-        // TODO use the spacing variables from the theme
-        let (group_icon_size, h_padding, group_width, chunks) = if self.config.groups().len() > 15 {
-            (16.0, space_xxs, 96.0, 11)
-        } else {
-            (32.0, space_s, 128.0, 8)
-        };
-        let group_height =
-            group_icon_size + 21.0 + (space_none as f32) + (space_xxs as f32) + (space_s as f32);
-
-        let mut add_group_btn = Some(
-            button::custom(
-                column![
                     container(
-                        icon::icon(icon::from_name("folder-new-symbolic").into())
-                            .width(Length::Fixed(group_icon_size))
-                            .height(Length::Fixed(group_icon_size))
+                        search_input(SEARCH_PLACEHOLDER.as_str(), self.search_value.as_str())
+                            .on_input(Message::InputChanged)
+                            .on_paste(Message::InputChanged)
+                            .on_submit(|_| Message::StartCurAppFocus)
+                            .style(TextInput::Search)
+                            .width(Length::Fixed(400.0))
+                            .size(14)
+                            .id(SEARCH_ID.clone())
                     )
-                    .padding(space_xxs),
-                    text::body(ADD_GROUP.as_str()).width(Length::Shrink)
+                    .align_y(Vertical::Center)
+                    .height(Length::Fixed(96.0))
                 ]
-                .align_x(Alignment::Center)
-                .width(Length::Fill),
-            )
-            .height(Length::Fixed(group_height))
-            .width(Length::Fixed(group_width))
-            .class(theme::Button::IconVertical)
-            .padding([space_none, h_padding, space_xxs, h_padding])
-            .on_press(Message::StartNewGroup),
-        );
-        let mut group_rows: Vec<_> = self
-            .config
-            .groups()
-            .chunks(chunks)
-            .enumerate()
-            .map(|(chunk, groups)| {
-                let mut group_row = row![]
-                    .spacing(space_xxs)
-                    .padding([space_s, space_none])
-                    .align_y(Alignment::Center);
-                for (i, group) in groups.iter().enumerate() {
-                    let i = i + chunk * chunks;
-                    let group_button = dnd_destination_for_data::<AppletString, Message>(
-                        button::custom(
-                            column![
-                                container(
-                                    icon::icon(from_name(group.icon.clone()).into())
-                                        .width(Length::Fixed(group_icon_size))
-                                        .height(Length::Fixed(group_icon_size))
-                                )
-                                .padding(space_xxs),
-                                text::body(group.name()).width(Length::Shrink)
-                            ]
-                            .align_x(Alignment::Center)
-                            .width(Length::Fill),
+                .align_y(Alignment::Center)
+                .spacing(space_xxs)
+            } else {
+                row![
+                    space::horizontal().width(Length::FillPortion(1)),
+                    if let Some(edit_name) = self.edit_name.as_ref() {
+                        container(
+                            text_input(cur_group.name(), edit_name)
+                                .on_input(Message::EditName)
+                                .on_paste(Message::EditName)
+                                .on_clear(Message::EditName(String::new()))
+                                .on_submit(|_| Message::SubmitName)
+                                .id(EDIT_GROUP_ID.clone())
+                                .width(Length::Fixed(200.0))
+                                .size(14),
                         )
-                        .height(Length::Fixed(group_height))
-                        .width(Length::Fixed(group_width))
-                        .class(
-                            if self.offer_group == Some(i)
-                                || (self.cur_group == i && self.offer_group.is_none())
+                    } else {
+                        container(text(cur_group.name()).size(24))
+                    },
+                    row![
+                        space::horizontal(),
+                        tooltip(
                             {
-                                // TODO customize the IconVertical to highlight in the way we need
-                                Button::Custom {
-                                    active: Box::new(|focused, theme| {
-                                        theme.pressed(focused, false, &Button::IconVertical)
-                                    }),
-                                    disabled: Box::new(|theme| {
-                                        theme.disabled(&Button::IconVertical)
-                                    }),
-                                    hovered: Box::new(|focused, theme| {
-                                        theme.hovered(focused, false, &Button::IconVertical)
-                                    }),
-                                    pressed: Box::new(|focused, theme| {
-                                        theme.pressed(focused, false, &Button::IconVertical)
-                                    }),
+                                let mut b = button::custom(
+                                    icon::icon(icon::from_name("edit-symbolic").into())
+                                        .width(Length::Fixed(32.0))
+                                        .height(Length::Fixed(32.0)),
+                                )
+                                .padding(space_xs)
+                                .class(Button::Icon);
+                                if self.edit_name.is_none() {
+                                    b = b.on_press(Message::StartEditName(cur_group.name()));
                                 }
-                            } else {
-                                Button::IconVertical
+                                container(b)
+                                    .height(Length::Fixed(96.0))
+                                    .align_y(Vertical::Center)
+                            },
+                            text(fl!("rename")),
+                            tooltip::Position::Bottom
+                        ),
+                        tooltip(
+                            container(
+                                button::custom(
+                                    icon::icon(icon::from_name("edit-delete-symbolic").into())
+                                        .width(Length::Fixed(32.0))
+                                        .height(Length::Fixed(32.0)),
+                                )
+                                .padding(space_xs)
+                                .class(Button::Icon)
+                                .on_press(Message::Delete(self.cur_group))
+                            )
+                            .height(Length::Fixed(96.0))
+                            .align_y(Vertical::Center),
+                            text(fl!("delete")),
+                            tooltip::Position::Bottom
+                        )
+                    ]
+                    .spacing(space_xxs)
+                    .width(Length::FillPortion(1))
+                ]
+                .padding([0, space_l])
+                .align_y(Alignment::Center)
+            };
+
+            // TODO grid widget in libcosmic
+            let app_grid_list: Vec<_> = self
+                .entry_path_input
+                .iter()
+                .zip(self.entry_ids.iter())
+                .zip(self.entry_icon_handles.iter())
+                .enumerate()
+                .map(|(i, ((entry, id), icon_handle))| {
+                    let gpu_idx = self.gpus.as_ref().map(|gpus| {
+                        if entry.prefers_dgpu {
+                            gpus.iter().position(|gpu| !gpu.default).unwrap_or(0)
+                        } else {
+                            gpus.iter().position(|gpu| gpu.default).unwrap_or(0)
+                        }
+                    });
+                    let dup = entry
+                        .path
+                        .as_ref()
+                        .and_then(|path| self.duplicates.get(path));
+                    let selected = self.menu.is_some_and(|m| m == i);
+
+                    let b = ApplicationButton::new(
+                        id.clone(),
+                        &entry.name,
+                        icon_handle.clone(),
+                        &entry.path,
+                        move |rect| Message::OpenContextMenu(rect, i),
+                        if self.menu.is_none() {
+                            Some(Message::ActivateApp(i, gpu_idx))
+                        } else if selected {
+                            Some(Message::CloseContextMenu)
+                        } else {
+                            None
+                        },
+                        // TODO add icon and text if duplicated
+                        dup,
+                        selected,
+                        self.menu.is_none().then_some(Message::StartDrag(i)),
+                        self.menu.is_none().then_some(Message::FinishDrag(false)),
+                        self.menu.is_none().then_some(Message::CancelDrag),
+                    );
+
+                    b.into()
+                })
+                .chunks(7)
+                .into_iter()
+                .map(|row_chunk| {
+                    let mut new_row = row_chunk.collect_vec();
+                    let missing = 7 - new_row.len();
+                    if missing > 0 {
+                        new_row.push(
+                            iced::widget::space::horizontal()
+                                .width(Length::FillPortion(missing.try_into().unwrap()))
+                                .into(),
+                        );
+                    }
+                    row(new_row).spacing(space_xxs).into()
+                })
+                .collect();
+
+            let app_scrollable = container(
+                scrollable(
+                    column(app_grid_list)
+                        .width(Length::Fill)
+                        .spacing(space_xxs)
+                        // padding on top needed to avoid focus highlight clipping
+                        .padding([4, space_xxl, space_xxs, space_xxl]),
+                )
+                .on_scroll(|viewport| Message::ScrollYOffset(viewport.absolute_offset().y))
+                .id(self.scrollable_id.clone())
+                .height(Length::Fill),
+            )
+            .max_height(444.0);
+
+            // TODO use the spacing variables from the theme
+            let (group_icon_size, h_padding, group_width, chunks) =
+                if self.config.groups().len() > 15 {
+                    (16.0, space_xxs, 96.0, 11)
+                } else {
+                    (32.0, space_s, 128.0, 8)
+                };
+            let group_height = group_icon_size
+                + 21.0
+                + (space_none as f32)
+                + (space_xxs as f32)
+                + (space_s as f32);
+
+            let mut add_group_btn = Some(
+                button::custom(
+                    column![
+                        container(
+                            icon::icon(icon::from_name("folder-new-symbolic").into())
+                                .width(Length::Fixed(group_icon_size))
+                                .height(Length::Fixed(group_icon_size))
+                        )
+                        .padding(space_xxs),
+                        text::body(ADD_GROUP.as_str()).width(Length::Shrink)
+                    ]
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
+                )
+                .height(Length::Fixed(group_height))
+                .width(Length::Fixed(group_width))
+                .class(theme::Button::IconVertical)
+                .padding([space_none, h_padding, space_xxs, h_padding])
+                .on_press(Message::StartNewGroup),
+            );
+            let mut group_rows: Vec<_> = self
+                .config
+                .groups()
+                .chunks(chunks)
+                .enumerate()
+                .map(|(chunk, groups)| {
+                    let mut group_row = row![]
+                        .spacing(space_xxs)
+                        .padding([space_s, space_none])
+                        .align_y(Alignment::Center);
+                    for (i, group) in groups.iter().enumerate() {
+                        let i = i + chunk * chunks;
+                        let group_button = dnd_destination_for_data::<AppletString, Message>(
+                            button::custom(
+                                column![
+                                    container(
+                                        icon::icon(from_name(group.icon.clone()).into())
+                                            .width(Length::Fixed(group_icon_size))
+                                            .height(Length::Fixed(group_icon_size))
+                                    )
+                                    .padding(space_xxs),
+                                    text::body(group.name()).width(Length::Shrink)
+                                ]
+                                .align_x(Alignment::Center)
+                                .width(Length::Fill),
+                            )
+                            .height(Length::Fixed(group_height))
+                            .width(Length::Fixed(group_width))
+                            .class(
+                                if self.offer_group == Some(i)
+                                    || (self.cur_group == i && self.offer_group.is_none())
+                                {
+                                    // TODO customize the IconVertical to highlight in the way we need
+                                    Button::Custom {
+                                        active: Box::new(|focused, theme| {
+                                            theme.pressed(focused, false, &Button::IconVertical)
+                                        }),
+                                        disabled: Box::new(|theme| {
+                                            theme.disabled(&Button::IconVertical)
+                                        }),
+                                        hovered: Box::new(|focused, theme| {
+                                            theme.hovered(focused, false, &Button::IconVertical)
+                                        }),
+                                        pressed: Box::new(|focused, theme| {
+                                            theme.pressed(focused, false, &Button::IconVertical)
+                                        }),
+                                    }
+                                } else {
+                                    Button::IconVertical
+                                },
+                            )
+                            .padding([space_none, h_padding, space_xxs, h_padding])
+                            .on_press_maybe(self.menu.is_none().then_some(Message::SelectGroup(i))),
+                            move |data, _| {
+                                Message::FinishDndOffer(
+                                    i,
+                                    data.and_then(|data| load_desktop_file(&[], data.0)),
+                                )
                             },
                         )
-                        .padding([space_none, h_padding, space_xxs, h_padding])
-                        .on_press_maybe(self.menu.is_none().then_some(Message::SelectGroup(i))),
-                        move |data, _| {
-                            Message::FinishDndOffer(
-                                i,
-                                data.and_then(|data| load_desktop_file(&[], data.0)),
-                            )
+                        .on_enter(move |_, _, _| Message::StartDndOffer(i))
+                        .on_leave(move || Message::LeaveDndOffer(i));
+
+                        group_row = group_row.push(group_button);
+                    }
+                    if groups.len() < chunks {
+                        group_row = group_row.push(add_group_btn.take().unwrap());
+                    }
+                    group_row
+                })
+                .collect();
+
+            if let Some(add_group_button) = add_group_btn.take() {
+                group_rows.push(
+                    row![add_group_button]
+                        .spacing(8)
+                        .padding([space_s, space_none])
+                        .align_y(Alignment::Center),
+                );
+            };
+            let group_rows =
+                Column::with_children(group_rows.into_iter().map(|r| r.into()).collect_vec());
+
+            let content = column![
+                top_row,
+                app_scrollable,
+                container(horizontal_rule(1))
+                    .padding([space_none, space_xxl])
+                    .width(Length::Fill),
+                group_rows
+            ]
+            .align_x(Alignment::Center);
+
+            let window = container(content)
+                .height(Length::Fixed(690.))
+                .max_height(690)
+                .max_width(1200.0)
+                .class(theme::Container::Custom(Box::new(|theme| {
+                    let t = theme.cosmic();
+                    let radii = t.radius_s().map(|x| if x < 4.0 { x } else { x + 4.0 });
+
+                    container::Style {
+                        text_color: Some(t.on_bg_color().into()),
+                        icon_color: Some(t.on_bg_color().into()),
+                        background: Some(Color::from(t.background(theme.transparent).base).into()),
+                        border: Border {
+                            radius: radii.into(),
+                            width: 1.0,
+                            color: t.bg_divider().into(),
                         },
-                    )
-                    .on_enter(move |_, _, _| Message::StartDndOffer(i))
-                    .on_leave(move || Message::LeaveDndOffer(i));
-
-                    group_row = group_row.push(group_button);
-                }
-                if groups.len() < chunks {
-                    group_row = group_row.push(add_group_btn.take().unwrap());
-                }
-                group_row
-            })
-            .collect();
-
-        if let Some(add_group_button) = add_group_btn.take() {
-            group_rows.push(
-                row![add_group_button]
-                    .spacing(8)
-                    .padding([space_s, space_none])
-                    .align_y(Alignment::Center),
-            );
-        };
-        let group_rows =
-            Column::with_children(group_rows.into_iter().map(|r| r.into()).collect_vec());
-
-        let content = column![
-            top_row,
-            app_scrollable,
-            container(horizontal_rule(1))
-                .padding([space_none, space_xxl])
-                .width(Length::Fill),
-            group_rows
-        ]
-        .align_x(Alignment::Center);
-
-        let window = container(content)
-            .height(Length::Fixed(690.))
-            .max_height(690)
-            .max_width(1200.0)
-            .class(theme::Container::Custom(Box::new(|theme| {
-                let t = theme.cosmic();
-                let radii = t.radius_s().map(|x| if x < 4.0 { x } else { x + 4.0 });
-
-                container::Style {
-                    text_color: Some(t.on_bg_color().into()),
-                    icon_color: Some(t.on_bg_color().into()),
-                    background: Some(Color::from(t.background(theme.transparent).base).into()),
-                    border: Border {
-                        radius: radii.into(),
-                        width: 1.0,
-                        color: t.bg_divider().into(),
-                    },
-                    shadow: Shadow::default(),
-                    snap: true,
-                }
-            })))
-            .center_x(Length::Fill)
-            .width(Length::Fixed(1200.));
-        stack![
-            mouse_area(
-                container(space::horizontal().width(Length::Fill))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-            )
-            .on_press(Message::Hide),
-            column!(
-                space::vertical().height(Length::Fixed(self.margin + 16.)),
-                mouse_area(window).on_press(Message::CloseContextMenu),
-            )
-            .align_x(Alignment::Center)
+                        shadow: Shadow::default(),
+                        snap: true,
+                    }
+                })))
+                .center_x(Length::Fill)
+                .width(Length::Fixed(1200.));
+            return stack![
+                mouse_area(
+                    container(space::horizontal().width(Length::Fill))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                )
+                .on_press(Message::Hide),
+                column!(
+                    space::vertical().height(Length::Fixed(self.margin + 16.)),
+                    mouse_area(window).on_press(Message::CloseContextMenu),
+                )
+                .align_x(Alignment::Center)
+                .width(Length::Fill)
+            ]
             .width(Length::Fill)
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+            .height(Length::Fill)
+            .into();
+        }
+        return horizontal().into();
     }
 
     fn subscription(&self) -> Subscription<Message> {
