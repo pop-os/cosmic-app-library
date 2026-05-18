@@ -51,7 +51,5 @@ cosmic-app-list-config = { git = "https://github.com/pop-os/cosmic-applets" }
 lto = "thin"
 
 # [patch."https://github.com/pop-os/libcosmic/"]
-# libcosmic = { git = "https://github.com/pop-os/libcosmic//" }
-# cosmic-config = { git = "https://github.com/pop-os/libcosmic//" }
-# cosmic-config = { path = "../libcosmic/cosmic-config/" }
-# libcosmic = { path = "../libcosmic/" }
+# libcosmic = { git = "https://github.com/pop-os/libcosmic//", branch = "spawn-fork-exit-fix" }
+# cosmic-config = { git = "https://github.com/pop-os/libcosmic//", branch = "spawn-fork-exit-fix" }
