@@ -979,7 +979,6 @@ impl cosmic::Application for CosmicAppLibrary {
                 return commands::popup::destroy_popup(*MENU_ID);
             }
             Message::SelectAction(action) => {
-                self.menu = None;
                 let mut tasks = vec![commands::popup::destroy_popup(*MENU_ID)];
                 if let Some(info) = self.menu.take().and_then(|i| self.entry_path_input.get(i)) {
                     match action {
