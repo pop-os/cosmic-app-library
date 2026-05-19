@@ -7,11 +7,11 @@ use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use cosmic::core::Auto;
 use cosmic::iced::platform_specific::shell::commands::layer_surface::set_padding;
 use cosmic::iced::runtime::platform_specific::wayland::layer_surface::IcedMargin;
 use cosmic::iced::runtime::{Action, platform_specific, task};
 use cosmic::iced::window;
+use cosmic::surface::action::{LiveSettings, app_layer_shell};
 use cosmic::widget::space::horizontal;
 use cosmic::{
     Element,
@@ -341,15 +341,23 @@ impl CosmicAppLibrary {
                 cosmic::Action::App(Message::GpuUpdate(gpus))
             });
             return Task::batch(vec![
-                get_layer_surface(SctkLayerSurfaceSettings {
-                    id: SurfaceId::RESERVED,
-                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                    anchor: Anchor::all(),
-                    namespace: "app-library".into(),
-                    size: Some((None, None)),
-                    exclusive_zone: -1,
-                    ..Default::default()
-                }),
+                cosmic::surface::surface_task(app_layer_shell(
+                    |app: &CosmicAppLibrary| LiveSettings {
+                        padding: Some(app.layer_padding()),
+                        corners: None,
+                        blur: None,
+                    },
+                    move |_: &mut CosmicAppLibrary| SctkLayerSurfaceSettings {
+                        id: SurfaceId::RESERVED,
+                        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                        anchor: Anchor::all(),
+                        namespace: "app-library".into(),
+                        size: Some((None, None)),
+                        exclusive_zone: -1,
+                        ..Default::default()
+                    },
+                    None,
+                )),
                 overlap_notify(SurfaceId::RESERVED, true),
                 fetch_gpus,
             ]);
@@ -376,15 +384,8 @@ impl CosmicAppLibrary {
             self.margin = o.y + o.height;
         }
         let mut cmds = Vec::with_capacity(2);
-        // TODO what to do about rounded corners...
         // set the padding
-        let margin = IcedMargin {
-            #[allow(clippy::cast_possible_truncation)]
-            top: self.margin as i32 + 16,
-            left: ((self.size.width - 1200.) / 2.).max(0.) as i32,
-            right: ((self.size.width - 1200.) / 2.).max(0.) as i32,
-            bottom: (self.size.height - 690. - 16. - self.margin).max(0.) as i32,
-        };
+        let margin = self.layer_padding();
         cmds.push(set_padding::<()>(SurfaceId::RESERVED, margin).discard());
         cmds.push(
             if self.core.system_theme().cosmic().frosted_system_interface {
@@ -413,6 +414,16 @@ impl CosmicAppLibrary {
             },
         );
         Task::batch(cmds)
+    }
+
+    fn layer_padding(&self) -> IcedMargin {
+        IcedMargin {
+            #[allow(clippy::cast_possible_truncation)]
+            top: self.margin as i32 + 16,
+            left: ((self.size.width - 1200.) / 2.).max(0.) as i32,
+            right: ((self.size.width - 1200.) / 2.).max(0.) as i32,
+            bottom: (self.size.height - 690. - 16. - self.margin).max(0.) as i32,
+        }
     }
 
     /// Update entry IDs and their icon handles.
