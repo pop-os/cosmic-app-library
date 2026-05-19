@@ -358,7 +358,6 @@ impl CosmicAppLibrary {
                     },
                     None,
                 )),
-                overlap_notify(SurfaceId::RESERVED, true),
                 fetch_gpus,
             ]);
         }
@@ -1101,6 +1100,7 @@ impl cosmic::Application for CosmicAppLibrary {
             }
             Message::Opened(size, window_id) => {
                 let mut tasks = Vec::new();
+                tasks.push(overlap_notify(SurfaceId::RESERVED, true));
                 if window_id == SurfaceId::RESERVED {
                     if matches!(self.surface_state, SurfaceState::WaitingToBeShown) {
                         self.surface_state = SurfaceState::Visible;
