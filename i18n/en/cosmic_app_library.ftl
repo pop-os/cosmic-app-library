@@ -26,3 +26,7 @@ snap = Snap
 system = System
 local = Local
 nix = Nix
+hide-app = Hide
+unhide-app = Unhide
+show-hidden = Show hidden apps
+hide-hidden = Hide hidden apps
