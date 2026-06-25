@@ -168,6 +168,7 @@ impl AppGroup {
 #[derive(Debug, Clone, Serialize, Deserialize, CosmicConfigEntry)]
 pub struct AppLibraryConfig {
     pub(crate) groups: Vec<AppGroup>,
+    pub(crate) hidden_apps: Vec<String>,
 }
 
 impl AppLibraryConfig {
@@ -220,6 +221,20 @@ impl AppLibraryConfig {
         }
     }
 
+    pub fn is_hidden(&self, id: &str) -> bool {
+        self.hidden_apps.iter().any(|hidden_id| hidden_id == id)
+    }
+
+    pub fn hide_entry(&mut self, id: &str) {
+        if !self.is_hidden(id) {
+            self.hidden_apps.push(id.to_string());
+        }
+    }
+
+    pub fn unhide_entry(&mut self, id: &str) {
+        self.hidden_apps.retain(|hidden_id| hidden_id != id);
+    }
+
     pub fn add_entry(&mut self, group: Option<usize>, id: &str) {
         if let Some(group) = group.and_then(|i| self.groups.get_mut(i)) {
             match &mut group.filter {
@@ -262,14 +277,23 @@ impl AppLibraryConfig {
         group: Option<usize>,
         input_value: &str,
         entries: &[Arc<DesktopEntryData>],
+        show_hidden: bool,
     ) -> Vec<Arc<DesktopEntryData>> {
-        match group {
+        let results = match group {
             None => HOME.filtered(input_value, &self.groups, entries),
             Some(i) => self
                 .groups
                 .get(i)
                 .map(|g| g.filtered(input_value, &Vec::new(), entries))
                 .unwrap_or_default(),
+        };
+        if show_hidden || self.hidden_apps.is_empty() {
+            results
+        } else {
+            results
+                .into_iter()
+                .filter(|e| !self.hidden_apps.iter().any(|id| id == &e.id))
+                .collect()
         }
     }
 }
@@ -277,6 +301,7 @@ impl AppLibraryConfig {
 impl Default for AppLibraryConfig {
     fn default() -> Self {
         AppLibraryConfig {
+            hidden_apps: Vec::new(),
             groups: vec![
                 AppGroup {
                     name: "cosmic-office".to_string(),
