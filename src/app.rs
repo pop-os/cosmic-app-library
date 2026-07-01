@@ -336,15 +336,14 @@ impl CosmicAppLibrary {
         self.needs_clear = true;
         let id = window::Id::unique();
         self.dummy_id = Some(id);
-        Task::batch(vec![
-            cosmic::surface::surface_task(simple_layer_shell::<Message>(
-                || LiveSettings {
-                    padding: Some(IcedMargin::default()),
-                    corners: Some(CornerRadius::default()),
-                    blur: Some(false),
-                },
-                move || {
-                    SctkLayerSurfaceSettings {
+        cosmic::surface::surface_task(simple_layer_shell::<Message>(
+            || LiveSettings {
+                padding: Some(IcedMargin::default()),
+                corners: Some(CornerRadius::default()),
+                blur: Some(false),
+            },
+            move || {
+                SctkLayerSurfaceSettings {
                     id,
                     layer: wlr_layer::Layer::Bottom,
                     keyboard_interactivity: wlr_layer::KeyboardInteractivity::None,
@@ -358,11 +357,9 @@ impl CosmicAppLibrary {
                     exclusive_zone: -1,
                     size_limits: Limits::NONE,
                 }
-                },
-                None::<fn() -> Element<'static, cosmic::Action<Message>>>,
-            )),
-            overlap_notify(id, true),
-        ])
+            },
+            None::<fn() -> Element<'static, cosmic::Action<Message>>>,
+        ))
     }
 
     pub fn activate(&mut self) -> Task<Message> {
@@ -408,10 +405,6 @@ impl CosmicAppLibrary {
     }
 
     fn handle_overlap(&mut self) -> Task<Message> {
-        if !matches!(self.surface_state, SurfaceState::Visible) {
-            return Task::none();
-        }
-
         let mid_height = self.size.height / 2.;
         self.margin = 0.;
 
@@ -1222,7 +1215,11 @@ impl cosmic::Application for CosmicAppLibrary {
             }
             Message::Opened(size, window_id) => {
                 let mut tasks = Vec::new();
-                if self.dummy_id.is_none() {
+                if let Some(dummy) = self.dummy_id
+                    && window_id == dummy
+                {
+                    tasks.push(overlap_notify(window_id, true));
+                } else if self.dummy_id.is_none() {
                     tasks.push(overlap_notify(SurfaceId::RESERVED, true));
                 }
                 if window_id == SurfaceId::RESERVED {
@@ -1247,11 +1244,11 @@ impl cosmic::Application for CosmicAppLibrary {
                     exclusive,
                     ..
                 } => {
-                    if self.needs_clear {
-                        self.needs_clear = false;
-                        self.overlap.clear();
-                    }
                     if exclusive > 0 || namespace == "Dock" || namespace == "Panel" {
+                        if self.needs_clear {
+                            self.needs_clear = false;
+                            self.overlap.clear();
+                        }
                         self.overlap.insert(identifier, logical_rect);
                     }
                     return self.handle_overlap();
