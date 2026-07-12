@@ -464,7 +464,7 @@ impl CosmicAppLibrary {
     /// Update entry IDs and their icon handles.
     fn update_entry_metadata(&mut self) {
         self.entry_ids = (0..self.entry_path_input.len())
-            .map(|_| widget::Id::unique())
+            .map(|i| widget::Id::from(format!("app-entry-{i}")))
             .collect();
 
         self.entry_icon_handles = self
