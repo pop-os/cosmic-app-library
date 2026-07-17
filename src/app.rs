@@ -350,12 +350,15 @@ impl CosmicAppLibrary {
                     layer: wlr_layer::Layer::Bottom,
                     keyboard_interactivity: wlr_layer::KeyboardInteractivity::None,
                     input_zone: Some(Vec::new()),
-                    anchor: wlr_layer::Anchor::TOP,
+                    // Anchor to every edge so the sensor spans the whole output.
+                    // A top-only 1200x200 surface could never overlap a bottom
+                    // panel/dock, so bottom-edge detection always saw nothing.
+                    anchor: wlr_layer::Anchor::all(),
                     output:
                         cosmic::iced::runtime::platform_specific::wayland::layer_surface::IcedOutput::Active,
                     namespace: "cosmic_launcher_dummy".into(),
                     margin: IcedMargin::default(),
-                    size: Some((Some(1200), Some(200))),
+                    size: Some((None, None)),
                     exclusive_zone: -1,
                     size_limits: Limits::NONE,
                 }
@@ -434,6 +437,7 @@ impl CosmicAppLibrary {
                     .max(self.size.height - o.y + edge_gap);
             }
         }
+
         let mut cmds = Vec::with_capacity(2);
         // set the padding
         let margin = self.layer_padding();
