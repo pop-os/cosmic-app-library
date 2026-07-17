@@ -93,7 +93,7 @@ use sctk::shell::wlr_layer;
 use serde::{Deserialize, Serialize};
 use switcheroo_control::Gpu;
 
-use crate::app_group::{AppGroup, AppLibraryConfig};
+use crate::app_group::{AppGroup, AppLibraryConfig, LibraryPosition};
 use crate::fl;
 use crate::subscriptions::desktop_files::desktop_files;
 use crate::widgets::application::{AppletString, ApplicationButton};
@@ -261,6 +261,7 @@ struct CosmicAppLibrary {
     app_list_config: AppListConfig,
     overlap: HashMap<String, Rectangle>,
     margin: f32,
+    bottom_margin: f32,
     size: iced::Size,
     needs_clear: bool,
     focused_id: Option<widget::Id>,
@@ -299,6 +300,7 @@ impl Default for CosmicAppLibrary {
             app_list_config: Default::default(),
             overlap: Default::default(),
             margin: Default::default(),
+            bottom_margin: Default::default(),
             size: Size::ZERO,
             needs_clear: Default::default(),
             focused_id: Default::default(),
@@ -407,6 +409,7 @@ impl CosmicAppLibrary {
     fn handle_overlap(&mut self) -> Task<Message> {
         let mid_height = self.size.height / 2.;
         self.margin = 0.;
+        self.bottom_margin = 0.;
 
         for o in self.overlap.values() {
             if self.margin + mid_height < o.y
@@ -417,6 +420,14 @@ impl CosmicAppLibrary {
             }
 
             self.margin = o.y + o.height;
+        }
+
+        // Detect a bottom-anchored panel/dock: an overlap whose top edge sits in
+        // the lower half of the screen. `bottom_margin` is its exposed height.
+        for o in self.overlap.values() {
+            if o.y >= mid_height {
+                self.bottom_margin = self.bottom_margin.max(self.size.height - o.y);
+            }
         }
         let mut cmds = Vec::with_capacity(2);
         // set the padding
@@ -451,13 +462,43 @@ impl CosmicAppLibrary {
         Task::batch(cmds)
     }
 
+    /// Resolve the configured position into a concrete edge (Top or Bottom),
+    /// honoring `Auto` by following the detected panel/dock layout.
+    fn effective_position(&self) -> LibraryPosition {
+        match self.config.position {
+            LibraryPosition::Top => LibraryPosition::Top,
+            LibraryPosition::Bottom => LibraryPosition::Bottom,
+            // Auto: open from the bottom only when there is a bottom dock and no
+            // top panel, so the default top-panel layout is unchanged.
+            LibraryPosition::Auto => {
+                if self.bottom_margin > 0. && self.margin == 0. {
+                    LibraryPosition::Bottom
+                } else {
+                    LibraryPosition::Top
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
     fn layer_padding(&self) -> IcedMargin {
+        let horizontal = ((self.size.width - 1200.) / 2.).max(0.) as i32;
+        let (top, bottom) = match self.effective_position() {
+            LibraryPosition::Bottom => (
+                (self.size.height - 690. - 16. - self.bottom_margin).max(0.) as i32,
+                self.bottom_margin as i32 + 16,
+            ),
+            // Top (and any resolved non-bottom).
+            _ => (
+                self.margin as i32 + 16,
+                (self.size.height - 690. - 16. - self.margin).max(0.) as i32,
+            ),
+        };
         IcedMargin {
-            #[allow(clippy::cast_possible_truncation)]
-            top: self.margin as i32 + 16,
-            left: ((self.size.width - 1200.) / 2.).max(0.) as i32,
-            right: ((self.size.width - 1200.) / 2.).max(0.) as i32,
-            bottom: (self.size.height - 690. - 16. - self.margin).max(0.) as i32,
+            top,
+            left: horizontal,
+            right: horizontal,
+            bottom,
         }
     }
 
@@ -1754,6 +1795,18 @@ impl cosmic::Application for CosmicAppLibrary {
             })))
             .center_x(Length::Fill)
             .width(Length::Fixed(1200.));
+        let window = mouse_area(window).on_press(Message::CloseContextMenu);
+        let positioned = match self.effective_position() {
+            LibraryPosition::Bottom => column!(
+                space::vertical().height(Length::Fill),
+                window,
+                space::vertical().height(Length::Fixed(self.bottom_margin + 16.)),
+            ),
+            _ => column!(
+                space::vertical().height(Length::Fixed(self.margin + 16.)),
+                window,
+            ),
+        };
         stack![
             mouse_area(
                 container(space::horizontal().width(Length::Fill))
@@ -1761,12 +1814,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     .height(Length::Fill)
             )
             .on_press(Message::Hide),
-            column!(
-                space::vertical().height(Length::Fixed(self.margin + 16.)),
-                mouse_area(window).on_press(Message::CloseContextMenu),
-            )
-            .align_x(Alignment::Center)
-            .width(Length::Fill)
+            positioned.align_x(Alignment::Center).width(Length::Fill)
         ]
         .width(Length::Fill)
         .height(Length::Fill)
