@@ -423,10 +423,15 @@ impl CosmicAppLibrary {
         }
 
         // Detect a bottom-anchored panel/dock: an overlap whose top edge sits in
-        // the lower half of the screen. `bottom_margin` is its exposed height.
+        // the lower half of the screen. `bottom_margin` is the distance from the
+        // screen bottom to the panel's top edge, plus the panel's own edge gap so
+        // the library floats above the panel with matching spacing (not flush).
         for o in self.overlap.values() {
             if o.y >= mid_height {
-                self.bottom_margin = self.bottom_margin.max(self.size.height - o.y);
+                let edge_gap = (self.size.height - (o.y + o.height)).max(0.);
+                self.bottom_margin = self
+                    .bottom_margin
+                    .max(self.size.height - o.y + edge_gap);
             }
         }
         let mut cmds = Vec::with_capacity(2);
