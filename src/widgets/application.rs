@@ -5,16 +5,16 @@ use core::str;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::clipboard::mime::{AllowedMimeTypes, AsMimeTypes};
 use cosmic::iced::core::alignment::Horizontal;
-use cosmic::iced::core::widget::{tree, Operation, Tree};
+use cosmic::iced::core::widget::{Operation, Tree, tree};
 use cosmic::iced::core::{
-    layout, mouse, overlay, renderer, Alignment, Clipboard, Event, Length, Rectangle, Shell, Widget,
+    Alignment, Clipboard, Event, Length, Rectangle, Shell, Widget, layout, mouse, overlay, renderer,
 };
 use cosmic::iced::widget::{column, text};
 use cosmic::iced::{Size, Vector};
 use cosmic::widget::{
     button, container, dnd_source, icon, {self},
 };
-use cosmic::{theme, Element};
+use cosmic::{Element, theme};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::iter;
