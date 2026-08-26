@@ -1,7 +1,8 @@
 name := 'cosmic-app-library'
 appid := 'com.system76.CosmicAppLibrary'
 
-export APPID := 'com.system76.CosmicAppLibrary'
+export APP_ID := 'com.system76.CosmicAppLibrary'
+export LOCKSTEP_XML_PATH := absolute_path('vendor/atspi-common/xml')
 
 rootdir := ''
 prefix := '/usr'
@@ -24,7 +25,7 @@ icon := appid + '.svg'
 icon-dst := base-dir / 'share' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icon
 
 # Default recipe which runs `just build-release`
-default: xdgen build-release
+default: build-release
 
 # Runs `cargo clean`
 clean: cargo::clean
@@ -62,11 +63,8 @@ uninstall:
     rm {{bin-dst}} {{desktop-dst}} {{appdata-dst}} {{icon-dst}}
 
 # Vendor dependencies locally
-vendor: xdgen cargo::vendor
+vendor: cargo::vendor
 
 # Extracts vendored dependencies
 vendor-extract: cargo::vendor-extract
 
-# Generate desktop entries and appstream metadata with translations
-xdgen:
-    env APP_ID={{appid}} APP_NAME={{name}} cargo run --manifest-path scripts/xdgen/Cargo.toml
