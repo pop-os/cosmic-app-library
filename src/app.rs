@@ -7,85 +7,58 @@ use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use cosmic::iced::event::wayland::OutputEvent;
+use cosmic::app::{Core, CosmicFlags, Settings, Task};
+use cosmic::cctk::sctk::shell::wlr_layer::{Anchor, KeyboardInteractivity};
+use cosmic::cctk::sctk::{self};
+use cosmic::cosmic_config::{Config, CosmicConfigEntry};
+use cosmic::cosmic_theme::Spacing;
+use cosmic::desktop::fde::PathSource;
+use cosmic::desktop::{DesktopEntryData, IconSourceExt, load_desktop_file};
+use cosmic::iced::core::alignment::Vertical;
+use cosmic::iced::core::event::PlatformSpecific;
+use cosmic::iced::core::event::wayland::{self, LayerEvent};
+use cosmic::iced::core::keyboard::Key;
+use cosmic::iced::core::keyboard::key::Named;
+use cosmic::iced::core::widget::operation::focusable::{find_focused, focus};
+use cosmic::iced::core::widget::operation::{self};
+use cosmic::iced::core::window::Id as SurfaceId;
+use cosmic::iced::core::{Border, Padding, Rectangle, Shadow};
+use cosmic::iced::event::listen_with;
+use cosmic::iced::event::wayland::{OutputEvent, OverlapNotifyEvent};
+use cosmic::iced::id::Id;
 use cosmic::iced::platform_specific::shell::commands::layer_surface::set_padding;
+use cosmic::iced::platform_specific::shell::wayland::commands::activation::request_token;
+use cosmic::iced::platform_specific::shell::wayland::commands::layer_surface::{
+    destroy_layer_surface, get_layer_surface,
+};
+use cosmic::iced::platform_specific::shell::wayland::commands::overlap_notify::overlap_notify;
+use cosmic::iced::platform_specific::shell::wayland::commands::popup::destroy_popup;
+use cosmic::iced::platform_specific::shell::wayland::commands::{self};
+use cosmic::iced::runtime::dnd::end_dnd;
 use cosmic::iced::runtime::platform_specific::wayland::CornerRadius;
-use cosmic::iced::runtime::platform_specific::wayland::layer_surface::IcedMargin;
-use cosmic::iced::runtime::{Action, platform_specific, task};
-use cosmic::iced::window;
+use cosmic::iced::runtime::platform_specific::wayland::layer_surface::{
+    IcedMargin, SctkLayerSurfaceSettings,
+};
+use cosmic::iced::runtime::platform_specific::wayland::popup::{SctkPopupSettings, SctkPositioner};
+use cosmic::iced::runtime::{self as iced_runtime, Action, platform_specific, task};
+use cosmic::iced::widget::rule::horizontal as horizontal_rule;
+use cosmic::iced::widget::scrollable::RelativeOffset;
+use cosmic::iced::widget::{column, container, mouse_area, row, stack};
+use cosmic::iced::window::Event as WindowEvent;
+use cosmic::iced::{self, Alignment, Color, Length, Limits, Size, Subscription, executor, window};
 use cosmic::surface::action::{LiveSettings, app_layer_shell, simple_layer_shell, simple_popup};
+use cosmic::theme::{self, Button, TextInput};
+use cosmic::widget::autosize::autosize;
+use cosmic::widget::button::{self, Catalog as ButtonStyleSheet};
+use cosmic::widget::dnd_destination::dnd_destination_for_data;
+use cosmic::widget::icon::{self, from_name};
 use cosmic::widget::menu::menu_column::MenuColumn;
 use cosmic::widget::space::horizontal;
-use cosmic::widget::{ListColumn, reorderable_flex_row};
-use cosmic::{
-    Element,
-    app::{Core, CosmicFlags, Settings, Task},
-    cctk::sctk::{
-        self,
-        shell::wlr_layer::{Anchor, KeyboardInteractivity},
-    },
-    cosmic_config::{Config, CosmicConfigEntry},
-    cosmic_theme::Spacing,
-    dbus_activation,
-    desktop::{DesktopEntryData, IconSourceExt, fde::PathSource, load_desktop_file},
-    iced::{
-        self, Alignment, Color, Length, Limits, Size, Subscription,
-        event::{listen_with, wayland::OverlapNotifyEvent},
-        executor,
-        id::Id,
-        /*wayland::actions::{
-            data_device::ActionInner,
-        },*/
-        widget::{
-            column, container, mouse_area, row, rule::horizontal as horizontal_rule,
-            scrollable::RelativeOffset,
-        },
-        window::Event as WindowEvent,
-    },
-    iced::{
-        core::{
-            Border, Padding, Rectangle, Shadow,
-            alignment::Vertical,
-            event::{
-                PlatformSpecific,
-                wayland::{self, LayerEvent},
-            },
-            keyboard::{Key, key::Named},
-            widget::operation::{
-                self,
-                focusable::{find_focused, focus},
-            },
-            window::Id as SurfaceId,
-        },
-        platform_specific::shell::wayland::commands::{
-            self,
-            activation::request_token,
-            layer_surface::{destroy_layer_surface, get_layer_surface},
-            overlap_notify::overlap_notify,
-            popup::destroy_popup,
-        },
-        runtime::{
-            self as iced_runtime,
-            dnd::end_dnd,
-            platform_specific::wayland::{
-                layer_surface::SctkLayerSurfaceSettings,
-                popup::{SctkPopupSettings, SctkPositioner},
-            },
-        },
-        widget::stack,
-    },
-    keyboard_nav,
-    theme::{self, Button, TextInput},
-    widget::{
-        self, Column,
-        autosize::autosize,
-        button::{self, Catalog as ButtonStyleSheet},
-        divider,
-        dnd_destination::dnd_destination_for_data,
-        icon::{self, from_name},
-        scrollable, search_input, space, svg, text, text_input, tooltip,
-    },
+use cosmic::widget::{
+    self, Column, ListColumn, divider, reorderable_flex_row, scrollable, search_input, space, svg,
+    text, text_input, tooltip,
 };
+use cosmic::{Element, dbus_activation, keyboard_nav};
 use cosmic_app_list_config::AppListConfig;
 use itertools::Itertools;
 use log::error;
@@ -488,8 +461,6 @@ enum Message {
     UpdateFocused(Option<widget::Id>),
     InputChanged(String),
     KeyboardNav(keyboard_nav::Action),
-    PrevRow,
-    NextRow,
     Layer(LayerEvent, SurfaceId),
     Hide,
     ActivateApp(usize, Option<usize>),
@@ -753,80 +724,6 @@ impl cosmic::Application for CosmicAppLibrary {
 
                 keyboard_nav::Action::Fullscreen => {}
             },
-
-            Message::PrevRow => {
-                let mut i = self
-                    .focused_id
-                    .as_ref()
-                    .and_then(|focused| self.entry_ids.iter().position(|i| i == focused))
-                    .unwrap_or(self.entry_ids.len().saturating_add(6));
-                if i == 0 {
-                    self.focused_id = None;
-
-                    return iced::Task::batch(vec![
-                        iced::widget::operation::focus_previous()
-                            .map(|id| cosmic::Action::App(Message::UpdateFocused(id))),
-                        iced_runtime::task::widget(find_focused())
-                            .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
-                    ]);
-                }
-                i = i.saturating_sub(7);
-                let y =
-                    ((i / 7) as f32 / ((self.entry_path_input.len() / 7) as f32).max(1.)).max(0.0);
-
-                let Some(focused) = self.entry_ids.get(i).cloned() else {
-                    return Task::none();
-                };
-                self.focused_id = Some(focused.clone());
-                return Task::batch(vec![
-                    iced_runtime::task::widget(focus(focused))
-                        .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
-                    iced_runtime::task::widget(operation::scrollable::snap_to(
-                        self.scrollable_id.clone(),
-                        RelativeOffset {
-                            x: None,
-                            y: Some(y),
-                        },
-                    )),
-                ]);
-            }
-            Message::NextRow => {
-                let mut i: i32 = self
-                    .focused_id
-                    .as_ref()
-                    .and_then(|focused| self.entry_ids.iter().position(|i| i == focused))
-                    .map(|i| i as i32)
-                    .unwrap_or(-7);
-                if i == self.entry_ids.len() as i32 - 1 {
-                    self.focused_id = None;
-                    return iced::Task::batch(vec![
-                        iced::widget::operation::focus_next()
-                            .map(|id| cosmic::Action::App(Message::UpdateFocused(id))),
-                        iced_runtime::task::widget(find_focused())
-                            .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
-                    ]);
-                }
-                i += 7;
-                i = i.min(self.entry_ids.len() as i32 - 1);
-                let Some(focused) = self.entry_ids.get(i as usize).cloned() else {
-                    return Task::none();
-                };
-                self.focused_id = Some(focused.clone());
-                let y =
-                    ((i / 7) as f32 / ((self.entry_path_input.len() / 7) as f32).max(1.)).max(0.0);
-
-                return Task::batch(vec![
-                    iced_runtime::task::widget(operation::scrollable::snap_to(
-                        self.scrollable_id.clone(),
-                        RelativeOffset {
-                            x: None,
-                            y: Some(y),
-                        },
-                    )),
-                    iced_runtime::task::widget(focus(focused))
-                        .map(|id| cosmic::Action::App(Message::UpdateFocused(Some(id)))),
-                ]);
-            }
             Message::InputChanged(value) => {
                 self.search_value = value;
                 return self.filter_apps();
@@ -1793,46 +1690,7 @@ impl cosmic::Application for CosmicAppLibrary {
                 {
                     Some(Message::CloseContextMenu)
                 }
-                cosmic::iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                    key,
-                    text: _,
-                    modifiers,
-                    ..
-                }) => match key {
-                    Key::Character(c) if modifiers.control() && (c == "p" || c == "k") => {
-                        Some(Message::PrevRow)
-                    }
-                    Key::Character(c) if modifiers.control() && (c == "n" || c == "j") => {
-                        Some(Message::NextRow)
-                    }
-                    Key::Character(c) if modifiers.control() && (c == "f" || c == "l") => {
-                        Some(Message::KeyboardNav(keyboard_nav::Action::FocusNext))
-                    }
-                    Key::Character(c) if modifiers.control() && (c == "b" || c == "h") => {
-                        Some(Message::KeyboardNav(keyboard_nav::Action::FocusPrevious))
-                    }
-                    Key::Named(Named::ArrowUp)
-                        if matches!(status, iced::event::Status::Ignored) =>
-                    {
-                        Some(Message::PrevRow)
-                    }
-                    Key::Named(Named::ArrowDown)
-                        if matches!(status, iced::event::Status::Ignored) =>
-                    {
-                        Some(Message::NextRow)
-                    }
-                    Key::Named(Named::ArrowLeft)
-                        if matches!(status, iced::event::Status::Ignored) =>
-                    {
-                        Some(Message::KeyboardNav(keyboard_nav::Action::FocusPrevious))
-                    }
-                    Key::Named(Named::ArrowRight)
-                        if matches!(status, iced::event::Status::Ignored) =>
-                    {
-                        Some(Message::KeyboardNav(keyboard_nav::Action::FocusNext))
-                    }
-                    _ => None,
-                },
+
                 cosmic::iced::Event::Window(WindowEvent::Opened { position: _, size }) => {
                     Some(Message::Opened(size, id))
                 }
