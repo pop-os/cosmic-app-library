@@ -165,9 +165,30 @@ impl AppGroup {
     }
 }
 
+/// Which edge of the screen the app library opens from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LibraryPosition {
+    /// Follow the panel/dock: bottom if a bottom dock is present and there is no
+    /// top panel, otherwise top.
+    Auto,
+    /// Always anchor to the top of the screen.
+    Top,
+    /// Always anchor to the bottom of the screen.
+    Bottom,
+}
+
+impl Default for LibraryPosition {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, CosmicConfigEntry)]
 pub struct AppLibraryConfig {
     pub(crate) groups: Vec<AppGroup>,
+    /// Which edge of the screen the library opens from.
+    #[serde(default)]
+    pub position: LibraryPosition,
 }
 
 impl AppLibraryConfig {
@@ -322,6 +343,7 @@ impl Default for AppLibraryConfig {
                     },
                 },
             ],
+            position: LibraryPosition::default(),
         }
     }
 }
