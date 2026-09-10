@@ -1010,6 +1010,7 @@ dependencies = [
  "anyhow",
  "clap",
  "cosmic-app-list-config",
+ "dirs",
  "futures",
  "i18n-embed",
  "i18n-embed-fl",

@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::fs::{self, OpenOptions};
+use std::io;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -530,8 +533,39 @@ enum Message {
 
 #[derive(Clone, Debug)]
 enum MenuAction {
+    AddToDesktop,
     Remove,
     DesktopAction(String),
+}
+
+fn desktop_shortcut_path(entry: &DesktopEntryData) -> Option<PathBuf> {
+    let file_name = entry.path.as_ref()?.file_name()?;
+    Some(dirs::desktop_dir()?.join(file_name))
+}
+
+fn add_desktop_shortcut(entry: &DesktopEntryData) -> io::Result<()> {
+    let source = entry
+        .path
+        .as_deref()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "desktop entry has no path"))?;
+    let target = desktop_shortcut_path(entry)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "desktop directory not found"))?;
+    let desktop_dir = target
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid desktop directory"))?;
+
+    fs::create_dir_all(desktop_dir)?;
+
+    let mut source_file = fs::File::open(source)?;
+    let mut target_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)?;
+    io::copy(&mut source_file, &mut target_file)?;
+
+    let mut permissions = source_file.metadata()?.permissions();
+    permissions.set_mode(permissions.mode() | 0o100);
+    target_file.set_permissions(permissions)
 }
 
 pub fn menu_button<'a, Message: Clone + 'a>(
@@ -1080,6 +1114,11 @@ impl cosmic::Application for CosmicAppLibrary {
                 let mut tasks = vec![commands::popup::destroy_popup(*MENU_ID)];
                 if let Some(info) = self.menu.take().and_then(|i| self.entry_path_input.get(i)) {
                     match action {
+                        MenuAction::AddToDesktop => {
+                            if let Err(err) = add_desktop_shortcut(info) {
+                                error!("failed to add desktop shortcut for {}: {err}", info.id);
+                            }
+                        }
                         MenuAction::Remove => {
                             self.config.remove_entry(self.cur_group, &info.id);
                             if let Some(helper) = self.helper.as_ref()
@@ -1389,6 +1428,14 @@ impl cosmic::Application for CosmicAppLibrary {
             });
             list_column.push(divider::horizontal::light().into());
             list_column.push(pin_to_app_tray.into());
+
+            if desktop_shortcut_path(menu).is_some_and(|path| !path.exists()) {
+                list_column.push(
+                    menu_button(text::body(fl!("add-to-desktop")))
+                        .on_press(Message::SelectAction(MenuAction::AddToDesktop))
+                        .into(),
+                );
+            }
 
             if self.cur_group.is_some() {
                 list_column.push(divider::horizontal::light().into());
