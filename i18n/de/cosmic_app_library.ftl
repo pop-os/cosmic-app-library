@@ -25,3 +25,7 @@ snap = Snap
 system = System
 local = Lokal
 nix = Nix
+xdg-title = { app-name }
+xdg-comment = Ein Anwendungsstarter für den COSMIC Desktop, der alle installierten Anwendungen in einem Raster anzeigt
+xdg-keywords = App;Anwendung;Bibliothek;Starter
+app-name = Anwendungen

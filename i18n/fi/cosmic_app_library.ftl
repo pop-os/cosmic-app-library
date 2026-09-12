@@ -25,3 +25,7 @@ delete-folder = Poistetaanko kansio?
 cosmic-library-home = Sovelluskirjasto
 pin-to-app-tray = Kiinnitä sovellusalueelle
 remove = Siirrä sovelluskirjastoon
+xdg-title = { app-name }
+xdg-comment = Sovelluskäynnistin COSMIC-työpöydälle; listaa kaikki asennetut sovellukset ruudukossa
+xdg-keywords = App;Application;Library;Launcher;sovellus;äppi;appi;kirjasto;käynnistin
+app-name = Sovellukset
