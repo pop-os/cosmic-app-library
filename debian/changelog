@@ -1,3 +1,9 @@
+cosmic-app-library (1.9.0) noble; urgency=medium
+
+  * Epoch 1.9.0 version update
+
+ -- Michael Murphy <michael@mmurphy.dev>  Mon, 14 Sep 2026 21:53:15 +0200
+
 cosmic-app-library (1.0.12) noble; urgency=medium
 
   * Update debian changelog
