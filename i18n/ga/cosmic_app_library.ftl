@@ -26,3 +26,6 @@ system = Córas
 local = Áitiúil
 nix = Nix
 xdg-title = { app-name }
+xdg-comment = Lainseálaí feidhmchlár don deasc COSMIC a liostaíonn na feidhmchláir suiteáilte go léir i ngreille
+xdg-keywords = Aip;Feidhmchlár;Leabharlann;Lainseálaí
+app-name = Feidhmchláir
