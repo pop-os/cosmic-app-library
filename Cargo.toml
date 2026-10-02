@@ -54,8 +54,12 @@ cosmic-app-list-config = { git = "https://github.com/pop-os/cosmic-applets" }
 lto = "thin"
 
 # [patch."https://github.com/pop-os/libcosmic/"]
-# libcosmic = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
+# libcosmic = { git = "https://github.com/FreddyFunk/libcosmic//", branch = "fix/gpu-descriptor" }
 # cosmic-config = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
 # cosmic-theme = { git = "https://github.com/pop-os/libcosmic//", branch = "theme-v2" }
 # cosmic-config = { path = "../libcosmic/cosmic-config/" }
 # libcosmic = { path = "../libcosmic/" }
+
+[patch."https://github.com/pop-os/libcosmic/"]
+libcosmic = { git = "https://github.com/FreddyFunk/libcosmic/", branch = "fix/gpu-descriptor" }
+cosmic-config = { git = "https://github.com/FreddyFunk/libcosmic/", branch = "fix/gpu-descriptor" }
