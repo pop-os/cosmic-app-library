@@ -25,3 +25,7 @@ snap = Snap
 system = Sistema
 local = Local
 nix = Nix
+xdg-title = { app-name }
+xdg-comment = Un lanzador de aplicacións para o escritorio COSMIC que lista todas as aplicacións instaladas nunha grella
+xdg-keywords = App;Aplicación;Biblioteca;Lanzador
+app-name = Aplicación

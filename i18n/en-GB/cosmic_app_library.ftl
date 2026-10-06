@@ -25,3 +25,7 @@ snap = Snap
 system = System
 local = Local
 nix = Nix
+xdg-title = { app-name }
+xdg-comment = An application launcher for the COSMIC desktop that lists all installed applications in a grid
+xdg-keywords = App;Application;Library;Launcher
+app-name = Applications
