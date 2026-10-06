@@ -1400,7 +1400,9 @@ impl cosmic::Application for CosmicAppLibrary {
             }
 
             return autosize(
-                container(scrollable(MenuColumn::with_children(list_column))).padding(1),
+                container(scrollable(MenuColumn::with_children(list_column)))
+                    .padding(1)
+                    .class(theme::Container::Dropdown),
                 MENU_AUTOSIZE_ID.clone(),
             )
             .max_height(800.)
