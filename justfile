@@ -14,8 +14,8 @@ mod cargo 'cargo.just'
 bin-src := cargo-target-dir / 'release' / name
 bin-dst := base-dir / 'bin' / name
 
-appdata := appid + '.metainfo.xml'
-appdata-dst := base-dir / 'share' / 'appdata' / appdata
+metainfo := appid + '.metainfo.xml'
+metainfo-dst := base-dir / 'share' / 'metainfo' / metainfo
 
 desktop := appid + '.desktop'
 desktop-dst := base-dir / 'share' / 'applications' / desktop
@@ -55,12 +55,12 @@ check-json: (check '--message-format=json')
 install:
     install -Dm0755 {{bin-src}} {{bin-dst}}
     install -Dm0644 {{ 'target' / 'xdgen' / desktop }} {{desktop-dst}}
-    install -Dm0644 {{ 'target' / 'xdgen' / appdata }} {{appdata-dst}}
+    install -Dm0644 {{ 'target' / 'xdgen' / metainfo }} {{metainfo-dst}}
     install -Dm0644 {{ 'data' / 'icons' / icon }} {{icon-dst}}
 
 # Uninstalls installed files
 uninstall:
-    rm {{bin-dst}} {{desktop-dst}} {{appdata-dst}} {{icon-dst}}
+    rm {{bin-dst}} {{desktop-dst}} {{metainfo-dst}} {{icon-dst}}
 
 # Vendor dependencies locally
 vendor: cargo::vendor
