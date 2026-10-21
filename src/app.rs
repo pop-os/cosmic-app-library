@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -113,6 +114,10 @@ static NEW_GROUP_PLACEHOLDER: LazyLock<String> = LazyLock::new(|| fl!("new-group
 static SAVE: LazyLock<String> = LazyLock::new(|| fl!("save"));
 static CANCEL: LazyLock<String> = LazyLock::new(|| fl!("cancel"));
 static RUN: LazyLock<String> = LazyLock::new(|| fl!("run"));
+static HIDE_APP: LazyLock<String> = LazyLock::new(|| fl!("hide-app"));
+static UNHIDE_APP: LazyLock<String> = LazyLock::new(|| fl!("unhide-app"));
+static SHOW_HIDDEN: LazyLock<String> = LazyLock::new(|| fl!("show-hidden"));
+static HIDE_HIDDEN: LazyLock<String> = LazyLock::new(|| fl!("hide-hidden"));
 static REMOVE: LazyLock<String> = LazyLock::new(|| fl!("remove"));
 static FLATPAK: LazyLock<String> = LazyLock::new(|| fl!("flatpak"));
 static LOCAL: LazyLock<String> = LazyLock::new(|| fl!("local"));
@@ -271,6 +276,7 @@ struct CosmicAppLibrary {
     group_keys: Vec<u64>,
     next_group_key: u64,
     dummy_id: Option<window::Id>,
+    show_hidden: bool,
 }
 
 impl Default for CosmicAppLibrary {
@@ -309,6 +315,7 @@ impl Default for CosmicAppLibrary {
             group_keys: Default::default(),
             next_group_key: Default::default(),
             dummy_id: None,
+            show_hidden: false,
         }
     }
 }
@@ -549,12 +556,15 @@ enum Message {
     Opened(Size, SurfaceId),
     Overlap(OverlapNotifyEvent),
     Output(OutputEvent),
+    ToggleShowHidden,
 }
 
 #[derive(Clone, Debug)]
 enum MenuAction {
     Remove,
     DesktopAction(String),
+    HideApp,
+    UnhideApp,
 }
 
 pub fn menu_button<'a, Message: Clone + 'a>(
@@ -594,7 +604,7 @@ impl CosmicAppLibrary {
 
         self.entry_path_input =
             self.config
-                .filtered(self.cur_group, &self.search_value, &self.all_entries);
+                .filtered(self.cur_group, &self.search_value, &self.all_entries, self.show_hidden);
 
         // collect duplicates
         self.duplicates.clear();
@@ -637,11 +647,12 @@ impl CosmicAppLibrary {
         let all_entries = self.all_entries.clone();
         let cur_group = self.cur_group;
         let input = self.search_value.clone();
+        let show_hidden = self.show_hidden;
         if !self.waiting_for_filtered {
             self.waiting_for_filtered = true;
             iced::Task::perform(
                 async move {
-                    let mut apps = config.filtered(cur_group, &input, &all_entries);
+                    let mut apps = config.filtered(cur_group, &input, &all_entries, show_hidden);
                     apps.sort_by(|a, b| a.name.cmp(&b.name));
                     (input, apps)
                 },
@@ -1116,6 +1127,24 @@ impl cosmic::Application for CosmicAppLibrary {
                             }
                             tasks.push(self.filter_apps());
                         }
+                        MenuAction::HideApp => {
+                            self.config.hide_entry(&info.id);
+                            if let Some(helper) = self.helper.as_ref()
+                                && let Err(err) = self.config.write_entry(helper)
+                            {
+                                error!("{:?}", err);
+                            }
+                            tasks.push(self.filter_apps());
+                        }
+                        MenuAction::UnhideApp => {
+                            self.config.unhide_entry(&info.id);
+                            if let Some(helper) = self.helper.as_ref()
+                                && let Err(err) = self.config.write_entry(helper)
+                            {
+                                error!("{:?}", err);
+                            }
+                            tasks.push(self.filter_apps());
+                        }
                         MenuAction::DesktopAction(exec) => {
                             let gpu_idx = self.gpus.as_deref().and_then(|gpus| {
                                 gpu_environment_override_idx(gpus, info.prefers_dgpu)
@@ -1245,6 +1274,10 @@ impl cosmic::Application for CosmicAppLibrary {
             }
             Message::AppListConfig(config) => {
                 self.app_list_config = config;
+            }
+            Message::ToggleShowHidden => {
+                self.show_hidden = !self.show_hidden;
+                return self.filter_apps();
             }
             Message::Opened(size, window_id) => {
                 let mut tasks = Vec::new();
@@ -1379,6 +1412,21 @@ impl cosmic::Application for CosmicAppLibrary {
                 );
             }
 
+            list_column.push(divider::horizontal::light().into());
+            if self.config.is_hidden(&menu.id) {
+                list_column.push(
+                    menu_button(text::body(UNHIDE_APP.clone()))
+                        .on_press(Message::SelectAction(MenuAction::UnhideApp))
+                        .into(),
+                );
+            } else {
+                list_column.push(
+                    menu_button(text::body(HIDE_APP.clone()))
+                        .on_press(Message::SelectAction(MenuAction::HideApp))
+                        .into(),
+                );
+            }
+
             if !menu.desktop_actions.is_empty() {
                 list_column.push(divider::horizontal::light().into());
                 for action in menu.desktop_actions.iter() {
@@ -1499,9 +1547,37 @@ impl cosmic::Application for CosmicAppLibrary {
             return autosize(dialog, DELETE_GROUP_AUTOSIZE_ID.clone()).into();
         }
 
+        let toggle_icon = "image-red-eye-symbolic";
+        let toggle_tooltip_text = if self.show_hidden {
+            &HIDE_HIDDEN
+        } else {
+            &SHOW_HIDDEN
+        };
+        let toggle_btn = tooltip(
+            container(
+                button::custom(
+                    icon::icon(icon::from_name(toggle_icon).into())
+                        .width(Length::Fixed(32.0))
+                        .height(Length::Fixed(32.0)),
+                )
+                .padding(space_xs)
+                .class(if self.show_hidden {
+                    Button::Suggested
+                } else {
+                    Button::Icon
+                })
+                .on_press(Message::ToggleShowHidden),
+            )
+            .height(Length::Fixed(96.0))
+            .align_y(Vertical::Center),
+            text(toggle_tooltip_text.deref()),
+            tooltip::Position::Bottom,
+        );
+
         let cur_group = self.current_group();
         let top_row = if self.cur_group.is_none() {
             row![
+                space::horizontal().width(Length::FillPortion(1)),
                 container(
                     search_input(SEARCH_PLACEHOLDER.as_str(), self.search_value.as_str())
                         .on_input(Message::InputChanged)
@@ -1513,8 +1589,14 @@ impl cosmic::Application for CosmicAppLibrary {
                         .id(SEARCH_ID.clone())
                 )
                 .align_y(Vertical::Center)
-                .height(Length::Fixed(96.0))
+                .height(Length::Fixed(96.0)),
+                container(
+                    row![space::horizontal(), toggle_btn]
+                        .spacing(space_xxs)
+                )
+                .width(Length::FillPortion(1))
             ]
+            .padding([0, space_l])
             .align_y(Alignment::Center)
             .spacing(space_xxs)
         } else {
@@ -1536,6 +1618,26 @@ impl cosmic::Application for CosmicAppLibrary {
                 },
                 row![
                     space::horizontal(),
+                    tooltip(
+                        container(
+                            button::custom(
+                                icon::icon(icon::from_name(toggle_icon).into())
+                                    .width(Length::Fixed(32.0))
+                                    .height(Length::Fixed(32.0)),
+                            )
+                            .padding(space_xs)
+                            .class(if self.show_hidden {
+                                Button::Suggested
+                            } else {
+                                Button::Icon
+                            })
+                            .on_press(Message::ToggleShowHidden)
+                        )
+                        .height(Length::Fixed(96.0))
+                        .align_y(Vertical::Center),
+                        text(toggle_tooltip_text.deref()),
+                        tooltip::Position::Bottom
+                    ),
                     tooltip(
                         {
                             let mut b = button::custom(
