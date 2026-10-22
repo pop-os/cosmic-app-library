@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -96,6 +96,11 @@ use crate::app_group::{AppGroup, AppLibraryConfig};
 use crate::fl;
 use crate::subscriptions::desktop_files::desktop_files;
 use crate::widgets::application::{AppletString, ApplicationButton};
+
+/// Shared zbus session connection for reuse
+pub static SHARED_ZBUS_SESSION: OnceLock<Option<zbus::Connection>> = OnceLock::new();
+/// Shared zbus system connection for reuse
+pub static SHARED_ZBUS_SYSTEM: OnceLock<Option<zbus::Connection>> = OnceLock::new();
 
 // popovers should show options, but also the desktop info options
 // should be a way to add apps to groups
@@ -314,8 +319,11 @@ impl Default for CosmicAppLibrary {
 }
 
 async fn try_get_gpus() -> Option<Vec<gpu::Descriptor>> {
-    let connection = zbus::Connection::system().await.ok()?;
-    let proxy = switcheroo_control::SwitcherooControlProxy::new(&connection)
+    let Some(connection) = SHARED_ZBUS_SYSTEM.wait() else {
+        return None;
+    };
+
+    let proxy = switcheroo_control::SwitcherooControlProxy::new(connection)
         .await
         .ok()?;
 
@@ -517,7 +525,7 @@ enum Message {
     Hide,
     ActivateApp(usize, Option<usize>),
     StartCurAppFocus,
-    ActivationToken(Option<String>, String, String, Option<usize>, bool),
+    ActivationToken(Arc<DesktopEntryData>, Option<String>, Option<usize>),
     SelectGroup(Option<usize>),
     ReorderGroup(Vec<GroupRowKey>),
     Delete(usize),
@@ -691,22 +699,13 @@ impl CosmicAppLibrary {
         gpu_idx: Option<usize>,
     ) -> Task<<Self as cosmic::Application>::Message> {
         self.edit_name = None;
-        if let Some(de) = self.entry_path_input.get(i) {
-            let app_id = de.id.clone();
-            let exec = de.exec.clone().unwrap();
-            let terminal = de.terminal;
+        if let Some(de) = self.entry_path_input.get(i).cloned() {
             request_token(
                 Some(String::from(<Self as cosmic::Application>::APP_ID)),
                 Some(SurfaceId::RESERVED),
             )
             .map(move |t| {
-                cosmic::Action::App(Message::ActivationToken(
-                    t,
-                    app_id.clone(),
-                    exec.clone(),
-                    gpu_idx,
-                    terminal,
-                ))
+                cosmic::Action::App(Message::ActivationToken(Arc::clone(&de), t, gpu_idx))
             })
         } else {
             Task::none()
@@ -913,7 +912,7 @@ impl cosmic::Application for CosmicAppLibrary {
                 });
                 return self.activate_app(i, gpu_idx);
             }
-            Message::ActivationToken(token, app_id, exec, gpu_idx, terminal) => {
+            Message::ActivationToken(entry, token, gpu_idx) => {
                 let mut env_vars = Vec::new();
                 if let Some(token) = token {
                     env_vars.push(("XDG_ACTIVATION_TOKEN".to_string(), token.clone()));
@@ -922,10 +921,19 @@ impl cosmic::Application for CosmicAppLibrary {
                 if let (Some(gpus), Some(idx)) = (self.gpus.as_ref(), gpu_idx) {
                     env_vars.extend(gpus[idx].environment.clone());
                 }
-                tokio::spawn(async move {
-                    cosmic::desktop::spawn_desktop_exec(exec, env_vars, Some(&app_id), terminal)
-                        .await
-                });
+                if let Some(conn) = SHARED_ZBUS_SESSION.wait() {
+                    let conn = conn.clone();
+                    tokio::spawn(async move {
+                        if entry.exec.is_some()
+                            && let Err(why) =
+                                cosmic_launch::spawn(&conn, &*entry, env_vars, &[] as &[String])
+                                    .await
+                        {
+                            log::error!("failed to spawn application: {why:?}");
+                        }
+                    });
+                }
+
                 return self.update(Message::Hide);
             }
             Message::SelectGroup(group) => {
@@ -1883,6 +1891,16 @@ impl cosmic::Application for CosmicAppLibrary {
     }
 
     fn init(mut core: Core, flags: Args) -> (Self, iced::Task<cosmic::Action<Self::Message>>) {
+        // Initialize dbus connections for shared reuse.
+        tokio::spawn(async {
+            let (session, system) =
+                futures::future::join(zbus::Connection::session(), zbus::Connection::system())
+                    .await;
+
+            _ = SHARED_ZBUS_SESSION.set(session.ok());
+            _ = SHARED_ZBUS_SYSTEM.set(system.ok());
+        });
+
         core.set_keyboard_nav(false);
         core.set_app_type(cosmic::core::AppType::System);
 
