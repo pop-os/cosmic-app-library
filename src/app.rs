@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -96,6 +96,9 @@ use crate::app_group::{AppGroup, AppLibraryConfig};
 use crate::fl;
 use crate::subscriptions::desktop_files::desktop_files;
 use crate::widgets::application::{AppletString, ApplicationButton};
+
+/// Shared zbus session connection for reuse
+pub static SHARED_ZBUS_SESSION: OnceLock<Option<zbus::Connection>> = OnceLock::new();
 
 // popovers should show options, but also the desktop info options
 // should be a way to add apps to groups
@@ -254,7 +257,7 @@ struct CosmicAppLibrary {
     scroll_offset: f32,
     core: Core,
     group_to_delete: Option<usize>,
-    gpus: Option<Vec<gpu::Descriptor>>,
+    gpus: Option<Arc<[gpu::Descriptor]>>,
     last_hide: Option<Instant>,
     duplicates: HashMap<PathBuf, (AppSource, Option<widget::icon::Handle>)>,
     app_list_config: AppListConfig,
@@ -313,45 +316,12 @@ impl Default for CosmicAppLibrary {
     }
 }
 
-async fn try_get_gpus() -> Option<Vec<gpu::Descriptor>> {
-    let connection = zbus::Connection::system().await.ok()?;
-    let proxy = switcheroo_control::SwitcherooControlProxy::new(&connection)
-        .await
-        .ok()?;
-
-    if !proxy.has_dual_gpu().await.ok()? {
-        return None;
-    }
-
-    let gpus = proxy.get_gpus().await.ok()?;
-    if gpus.is_empty() {
-        return None;
-    }
-    Some(
-        gpus.into_iter()
-            .map(|gpu| gpu::Descriptor {
-                name: gpu.name,
-                environment: gpu.environment,
-                default: gpu.default,
-                discrete: gpu.discrete,
-            })
-            .collect(),
-    )
-}
-
 fn gpu_preference(prefers_non_default_gpu: bool) -> gpu::Preference {
     if prefers_non_default_gpu {
         gpu::Preference::NonDefault
     } else {
         gpu::Preference::Default
     }
-}
-
-fn gpu_environment_override_idx(
-    gpus: &[gpu::Descriptor],
-    prefers_non_default_gpu: bool,
-) -> Option<usize> {
-    gpu_preference(prefers_non_default_gpu).select(gpus)
 }
 
 impl CosmicAppLibrary {
@@ -400,29 +370,23 @@ impl CosmicAppLibrary {
             self.cur_group = None;
             self.load_apps();
             self.needs_clear = true;
-            let fetch_gpus = Task::perform(try_get_gpus(), |gpus| {
-                cosmic::Action::App(Message::GpuUpdate(gpus))
-            });
-            return Task::batch(vec![
-                cosmic::surface::surface_task(app_layer_shell(
-                    |app: &CosmicAppLibrary| LiveSettings {
-                        padding: Some(app.layer_padding()),
-                        corners: None,
-                        blur: None,
-                    },
-                    move |_: &mut CosmicAppLibrary| SctkLayerSurfaceSettings {
-                        id: SurfaceId::RESERVED,
-                        keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                        anchor: Anchor::all(),
-                        namespace: "app-library".into(),
-                        size: Some((None, None)),
-                        exclusive_zone: -1,
-                        ..Default::default()
-                    },
-                    None,
-                )),
-                fetch_gpus,
-            ]);
+            return cosmic::surface::surface_task(app_layer_shell(
+                |app: &CosmicAppLibrary| LiveSettings {
+                    padding: Some(app.layer_padding()),
+                    corners: None,
+                    blur: None,
+                },
+                move |_: &mut CosmicAppLibrary| SctkLayerSurfaceSettings {
+                    id: SurfaceId::RESERVED,
+                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    anchor: Anchor::all(),
+                    namespace: "app-library".into(),
+                    size: Some((None, None)),
+                    exclusive_zone: -1,
+                    ..Default::default()
+                },
+                None,
+            ));
         }
         Task::none()
     }
@@ -515,9 +479,14 @@ enum Message {
     NextRow,
     Layer(LayerEvent, SurfaceId),
     Hide,
-    ActivateApp(usize, Option<usize>),
+    ActivateApp(usize, Option<gpu::Preference>),
     StartCurAppFocus,
-    ActivationToken(Option<String>, String, String, Option<usize>, bool),
+    ActivationToken {
+        entry: Arc<DesktopEntryData>,
+        action: Option<String>,
+        token: Option<String>,
+        gpu_override: Option<gpu::Preference>,
+    },
     SelectGroup(Option<usize>),
     ReorderGroup(Vec<GroupRowKey>),
     Delete(usize),
@@ -542,7 +511,6 @@ enum Message {
     FinishDndOffer(Option<usize>, Option<DesktopEntryData>),
     LeaveDndOffer(Option<usize>),
     ScrollYOffset(f32),
-    GpuUpdate(Option<Vec<gpu::Descriptor>>),
     PinToAppTray(usize),
     UnPinFromAppTray(usize),
     AppListConfig(AppListConfig),
@@ -688,25 +656,21 @@ impl CosmicAppLibrary {
     fn activate_app(
         &mut self,
         i: usize,
-        gpu_idx: Option<usize>,
+        gpu_override: Option<gpu::Preference>,
     ) -> Task<<Self as cosmic::Application>::Message> {
         self.edit_name = None;
-        if let Some(de) = self.entry_path_input.get(i) {
-            let app_id = de.id.clone();
-            let exec = de.exec.clone().unwrap();
-            let terminal = de.terminal;
+        if let Some(de) = self.entry_path_input.get(i).cloned() {
             request_token(
                 Some(String::from(<Self as cosmic::Application>::APP_ID)),
                 Some(SurfaceId::RESERVED),
             )
-            .map(move |t| {
-                cosmic::Action::App(Message::ActivationToken(
-                    t,
-                    app_id.clone(),
-                    exec.clone(),
-                    gpu_idx,
-                    terminal,
-                ))
+            .map(move |token| {
+                cosmic::Action::App(Message::ActivationToken {
+                    entry: Arc::clone(&de),
+                    action: None,
+                    token,
+                    gpu_override,
+                })
             })
         } else {
             Task::none()
@@ -890,8 +854,8 @@ impl cosmic::Application for CosmicAppLibrary {
             Message::Hide => {
                 return self.hide();
             }
-            Message::ActivateApp(i, gpu_idx) => {
-                return self.activate_app(i, gpu_idx);
+            Message::ActivateApp(i, gpu_override) => {
+                return self.activate_app(i, gpu_override);
             }
             Message::StartCurAppFocus => {
                 let i = if self
@@ -906,26 +870,43 @@ impl cosmic::Application for CosmicAppLibrary {
                         .and_then(|focus| self.entry_ids.iter().position(|id| focus == id))
                         .unwrap_or_default()
                 };
-                let gpu_idx = self.entry_path_input.get(i).and_then(|entry| {
-                    self.gpus
-                        .as_deref()
-                        .and_then(|gpus| gpu_environment_override_idx(gpus, entry.prefers_dgpu))
-                });
-                return self.activate_app(i, gpu_idx);
+                return self.activate_app(i, None);
             }
-            Message::ActivationToken(token, app_id, exec, gpu_idx, terminal) => {
+            Message::ActivationToken {
+                entry,
+                action,
+                token,
+                gpu_override,
+            } => {
+                let Some(conn) = SHARED_ZBUS_SESSION.get().unwrap() else {
+                    return self.update(Message::Hide);
+                };
+
                 let mut env_vars = Vec::new();
                 if let Some(token) = token {
                     env_vars.push(("XDG_ACTIVATION_TOKEN".to_string(), token.clone()));
                     env_vars.push(("DESKTOP_STARTUP_ID".to_string(), token));
                 }
-                if let (Some(gpus), Some(idx)) = (self.gpus.as_ref(), gpu_idx) {
-                    env_vars.extend(gpus[idx].environment.clone());
-                }
+
+                let conn = conn.clone();
+                let gpus = self.gpus.clone();
                 tokio::spawn(async move {
-                    cosmic::desktop::spawn_desktop_exec(exec, env_vars, Some(&app_id), terminal)
+                    if entry.exec.is_some()
+                        && let Err(why) = cosmic_launch::spawn(
+                            &conn,
+                            &*entry,
+                            action.as_deref(),
+                            gpus.as_deref().unwrap_or_default(),
+                            gpu_override,
+                            env_vars,
+                            &[] as &[String],
+                        )
                         .await
+                    {
+                        log::error!("failed to spawn application: {why:?}");
+                    }
                 });
+
                 return self.update(Message::Hide);
             }
             Message::SelectGroup(group) => {
@@ -1116,31 +1097,20 @@ impl cosmic::Application for CosmicAppLibrary {
                             }
                             tasks.push(self.filter_apps());
                         }
-                        MenuAction::DesktopAction(exec) => {
-                            let gpu_idx = self.gpus.as_deref().and_then(|gpus| {
-                                gpu_environment_override_idx(gpus, info.prefers_dgpu)
+                        MenuAction::DesktopAction(name) => {
+                            let info = Arc::clone(info);
+                            return request_token(
+                                Some(String::from(<Self as cosmic::Application>::APP_ID)),
+                                Some(SurfaceId::RESERVED),
+                            )
+                            .map(move |token| {
+                                cosmic::Action::App(Message::ActivationToken {
+                                    entry: Arc::clone(&info),
+                                    action: Some(name.clone()),
+                                    token,
+                                    gpu_override: None,
+                                })
                             });
-                            let mut exec = shlex::Shlex::new(&exec);
-
-                            let mut cmd = match exec.next() {
-                                Some(cmd) if !cmd.contains('=') => {
-                                    tokio::process::Command::new(cmd)
-                                }
-                                _ => return Task::none(),
-                            };
-                            for arg in exec {
-                                // TODO handle "%" args here if necessary?
-                                if !arg.starts_with('%') {
-                                    cmd.arg(arg);
-                                }
-                            }
-                            if let Some(gpu) =
-                                gpu_idx.and_then(|gpu_idx| self.gpus.as_deref()?.get(gpu_idx))
-                            {
-                                cmd.envs(&gpu.environment);
-                            }
-                            let _ = cmd.spawn();
-                            return self.hide();
                         }
                     }
                 }
@@ -1218,9 +1188,6 @@ impl cosmic::Application for CosmicAppLibrary {
                 if self.search_value != input {
                     return self.filter_apps();
                 }
-            }
-            Message::GpuUpdate(gpus) => {
-                self.gpus = gpus;
             }
             Message::PinToAppTray(usize) => {
                 let pinned_id = self.entry_path_input.get(usize).map(|e| e.id.clone());
@@ -1356,6 +1323,7 @@ impl cosmic::Application for CosmicAppLibrary {
 
             if let Some(gpus) = self.gpus.as_ref() {
                 let default_idx = gpu_preference(menu.prefers_dgpu).preferred(gpus);
+
                 for (j, gpu) in gpus.iter().enumerate() {
                     list_column.push(
                         menu_button(text::body(format!(
@@ -1367,7 +1335,7 @@ impl cosmic::Application for CosmicAppLibrary {
                                 String::new()
                             }
                         )))
-                        .on_press(Message::ActivateApp(*i, Some(j)))
+                        .on_press(Message::ActivateApp(*i, Some(gpu::Preference::Id(j))))
                         .into(),
                     )
                 }
@@ -1385,7 +1353,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     list_column.push(
                         menu_button(text::body(&action.name))
                             .on_press(Message::SelectAction(MenuAction::DesktopAction(
-                                action.exec.clone(),
+                                action.name.clone(),
                             )))
                             .into(),
                     );
@@ -1587,10 +1555,6 @@ impl cosmic::Application for CosmicAppLibrary {
             .zip(self.entry_icon_handles.iter())
             .enumerate()
             .map(|(i, ((entry, id), icon_handle))| {
-                let gpu_idx = self
-                    .gpus
-                    .as_deref()
-                    .and_then(|gpus| gpu_environment_override_idx(gpus, entry.prefers_dgpu));
                 let dup = entry
                     .path
                     .as_ref()
@@ -1604,7 +1568,7 @@ impl cosmic::Application for CosmicAppLibrary {
                     &entry.path,
                     move |rect| Message::OpenContextMenu(rect, i),
                     if self.menu.is_none() {
-                        Some(Message::ActivateApp(i, gpu_idx))
+                        Some(Message::ActivateApp(i, None))
                     } else if selected {
                         Some(Message::CloseContextMenu)
                     } else {
@@ -1883,6 +1847,25 @@ impl cosmic::Application for CosmicAppLibrary {
     }
 
     fn init(mut core: Core, flags: Args) -> (Self, iced::Task<cosmic::Action<Self::Message>>) {
+        let gpus = futures::executor::block_on(async {
+            // Initialize dbus connections for shared reuse.
+            let (session, system) =
+                futures::future::join(zbus::Connection::session(), zbus::Connection::system())
+                    .await;
+
+            // Get a list of available GPUs.
+            let mut gpus: Option<Arc<[gpu::Descriptor]>> = None;
+            if let Ok(conn) = system.as_ref() {
+                gpus = cosmic_launch::gpu::enumerate(conn)
+                    .await
+                    .map(|iter| Arc::from(iter.collect::<Vec<_>>()));
+            }
+
+            _ = SHARED_ZBUS_SESSION.set(session.ok());
+
+            gpus
+        });
+
         core.set_keyboard_nav(false);
         core.set_app_type(cosmic::core::AppType::System);
 
@@ -1916,6 +1899,7 @@ impl cosmic::Application for CosmicAppLibrary {
             scrollable_id,
             group_keys,
             next_group_key: group_count,
+            gpus,
             ..Default::default()
         };
 
