@@ -296,13 +296,8 @@ impl Default for AppLibraryConfig {
                     name: "cosmic-system".to_string(),
                     icon: "folder-symbolic".to_string(),
                     filter: FilterType::Categories {
-                        categories: vec!["System".to_string()],
-                        include: vec![
-                            "gnome-language-selector".to_string(),
-                            "im-config".to_string(),
-                            "org.freedesktop.IBus.Setup".to_string(),
-                            "system76-driver".to_string(),
-                        ],
+                        categories: vec!["System".to_string(), "Settings".to_string()],
+                        include: vec![],
                         exclude: vec![
                             "com.system76.CosmicStore".to_string(),
                             "com.system76.CosmicTerm".to_string(),
