@@ -13,7 +13,7 @@ wgpu = ["libcosmic/wgpu"]
 xdgen = "0.1.0"
 
 [dependencies]
-zbus = "5.12"
+zbus = "6.2.1"
 cosmic-launch = { git = "https://github.com/pop-os/libcosmic", features = [
     "systemd",
     "tokio",
@@ -27,7 +27,7 @@ libcosmic = { git = "https://github.com/pop-os/libcosmic", features = [
     "single-instance",
     "xdg-portal",
 ] }
-tokio = { version = "1.48", features = ["sync", "rt", "process"] }
+tokio = { version = "1.54.1", features = ["sync", "rt", "process"] }
 sctk = { package = "smithay-client-toolkit", version = "0.20.0" }
 pretty_env_logger = "0.5"
 log = "0.4"
@@ -39,26 +39,25 @@ i18n-embed = { version = "0.16", features = [
 ] }
 i18n-embed-fl = "0.10"
 rust-embed = "8.9"
-shlex = "1.3.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 ron = "0.12"
 notify = "*"
 anyhow = "1.0"
-itertools = "0.14"
+itertools = "0.15.0"
 url = "2.5"
-nix = "0.30"
+nix = "0.31.3"
 clap = { version = "4.5", features = ["derive"] }
 cosmic-app-list-config = { git = "https://github.com/pop-os/cosmic-applets" }
 
 [profile.release]
 lto = "thin"
 
-# [patch."https://github.com/pop-os/libcosmic/"]
-# cosmic-config = { git = "https://github.com/pop-os/libcosmic//", branch = "cosmic-launch" }
-# cosmic-launch = { git = "https://github.com/pop-os/libcosmic//", branch = "cosmic-launch" }
-# cosmic-theme = { git = "https://github.com/pop-os/libcosmic//", branch = "cosmic-launch" }
-# libcosmic = { git = "https://github.com/pop-os/libcosmic//", branch = "cosmic-launch" }
+[patch."https://github.com/pop-os/libcosmic/"]
+cosmic-config = { git = "https://github.com/pop-os/libcosmic//", branch = "launch" }
+cosmic-launch = { git = "https://github.com/pop-os/libcosmic//", branch = "launch" }
+cosmic-theme = { git = "https://github.com/pop-os/libcosmic//", branch = "launch" }
+libcosmic = { git = "https://github.com/pop-os/libcosmic//", branch = "launch" }
 # cosmic-config = { path = "../libcosmic/cosmic-config/" }
 # cosmic-launch = { path = "../libcosmic/cosmic-launch/" }
 # cosmic-theme = { path = "../libcosmic/cosmic-theme/" }
