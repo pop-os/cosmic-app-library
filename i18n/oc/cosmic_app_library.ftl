@@ -25,3 +25,4 @@ delete-folder = Suprimir lo dossièr ?
     .msg = Suprimir aqueste grop desplaçarà las icònas de las aplicacions cap a l’acuèlh.
 run = Executar
 delete = Suprimir
+rename = Renomenar
