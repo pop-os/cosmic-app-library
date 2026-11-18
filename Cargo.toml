@@ -14,6 +14,7 @@ xdgen = "0.1.0"
 
 [dependencies]
 zbus = "6.2.1"
+cosmic-freedesktop-icons = { git = "https://github.com/pop-os/freedesktop-icons" }
 cosmic-launch = { git = "https://github.com/pop-os/libcosmic", features = [
     "systemd",
     "tokio",
@@ -27,7 +28,7 @@ libcosmic = { git = "https://github.com/pop-os/libcosmic", features = [
     "single-instance",
     "xdg-portal",
 ] }
-tokio = { version = "1.54.1", features = ["sync", "rt", "process"] }
+tokio = { version = "1.54.1", features = ["sync", "rt", "process", "time"] }
 sctk = { package = "smithay-client-toolkit", version = "0.20.0" }
 pretty_env_logger = "0.5"
 log = "0.4"
@@ -49,6 +50,9 @@ url = "2.5"
 nix = "0.31.3"
 clap = { version = "4.5", features = ["derive"] }
 cosmic-app-list-config = { git = "https://github.com/pop-os/cosmic-applets" }
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 lto = "thin"

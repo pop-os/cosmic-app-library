@@ -27,7 +27,11 @@ use cosmic::{
     cosmic_config::{Config, CosmicConfigEntry},
     cosmic_theme::Spacing,
     dbus_activation,
-    desktop::{DesktopEntryData, IconSourceExt, fde::PathSource, gpu, load_desktop_file},
+    desktop::{
+        DesktopEntryData, IconSourceExt,
+        fde::{IconSource, PathSource},
+        gpu, load_desktop_file,
+    },
     iced::{
         self, Alignment, Color, Length, Limits, Size, Subscription,
         event::{listen_with, wayland::OverlapNotifyEvent},
@@ -254,6 +258,7 @@ struct CosmicAppLibrary {
     dnd_icon: Option<usize>,
     offer_group: Option<Option<usize>>,
     waiting_for_filtered: bool,
+    app_list_generation: u64,
     scroll_offset: f32,
     core: Core,
     group_to_delete: Option<usize>,
@@ -292,6 +297,7 @@ impl Default for CosmicAppLibrary {
             dnd_icon: Default::default(),
             offer_group: Default::default(),
             waiting_for_filtered: Default::default(),
+            app_list_generation: 0,
             scroll_offset: Default::default(),
             core: Default::default(),
             group_to_delete: Default::default(),
@@ -457,9 +463,38 @@ impl CosmicAppLibrary {
         self.entry_icon_handles = self
             .entry_path_input
             .iter()
-            .map(|e| e.icon.as_cosmic_icon())
+            .map(|entry| application_icon(entry))
             .collect();
     }
+}
+
+fn application_icon(entry: &DesktopEntryData) -> icon::Handle {
+    if let (IconSource::Name(name), Some(path)) = (&entry.icon, &entry.path)
+        && matches!(
+            PathSource::guess_from(path),
+            PathSource::LocalFlatpak | PathSource::SystemFlatpak
+        )
+    {
+        let themed = icon::from_name(name.as_str())
+            .prefer_svg(true)
+            .size(128)
+            .fallback(None);
+        if let Some(path) = themed.path().or_else(|| {
+            // The export directory may have appeared after the icon themes were discovered.
+            let desktop_file = path.canonicalize().ok()?;
+            let export_share = desktop_file.parent()?.parent()?;
+            let paths = [export_share.join("icons/hicolor")];
+            cosmic_freedesktop_icons::lookup(name)
+                .with_size(128)
+                .force_svg()
+                .with_extra_paths(&paths)
+                .find()
+        }) {
+            return icon::from_path(path).symbolic(name.ends_with("-symbolic"));
+        }
+    }
+
+    entry.icon.as_cosmic_icon()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -500,7 +535,7 @@ enum Message {
     SubmitNewGroup,
     CancelNewGroup,
     LoadApps,
-    FilterApps(String, Vec<Arc<DesktopEntryData>>),
+    FilterApps(u64, String, Vec<Arc<DesktopEntryData>>),
     OpenContextMenu(Rectangle, usize),
     CloseContextMenu,
     SelectAction(MenuAction),
@@ -549,6 +584,8 @@ impl CosmicAppLibrary {
     }
 
     pub fn load_apps(&mut self) {
+        self.app_list_generation += 1;
+        self.waiting_for_filtered = false;
         let xdg_current_desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
         self.all_entries = cosmic::desktop::load_applications(
             self.locale.as_slice(),
@@ -607,13 +644,14 @@ impl CosmicAppLibrary {
         let input = self.search_value.clone();
         if !self.waiting_for_filtered {
             self.waiting_for_filtered = true;
+            let generation = self.app_list_generation;
             iced::Task::perform(
                 async move {
                     let mut apps = config.filtered(cur_group, &input, &all_entries);
                     apps.sort_by(|a, b| a.name.cmp(&b.name));
                     (input, apps)
                 },
-                |(input, apps)| Message::FilterApps(input, apps),
+                move |(input, apps)| Message::FilterApps(generation, input, apps),
             )
             .map(cosmic::Action::App)
         } else {
@@ -971,7 +1009,19 @@ impl cosmic::Application for CosmicAppLibrary {
                 }
             }
             Message::LoadApps => {
-                return self.filter_apps();
+                if matches!(self.surface_state, SurfaceState::Hidden) {
+                    return Task::none();
+                }
+
+                let mut tasks = Vec::new();
+                if self.menu.take().is_some() {
+                    tasks.push(destroy_popup(*MENU_ID));
+                }
+                if self.dnd_icon.take().is_some() {
+                    tasks.push(end_dnd());
+                }
+                self.load_apps();
+                return Task::batch(tasks);
             }
             Message::Delete(group) => {
                 self.group_to_delete = Some(group);
@@ -1180,7 +1230,10 @@ impl cosmic::Application for CosmicAppLibrary {
                 self.group_to_delete = None;
                 return destroy_layer_surface(*DELETE_GROUP_WINDOW_ID);
             }
-            Message::FilterApps(input, filtered_apps) => {
+            Message::FilterApps(generation, input, filtered_apps) => {
+                if generation != self.app_list_generation {
+                    return Task::none();
+                }
                 self.entry_path_input = filtered_apps;
                 self.update_entry_metadata();
 
@@ -1911,5 +1964,50 @@ impl cosmic::Application for CosmicAppLibrary {
         };
         let dummy_task = self_.create_dummy_layer_surface();
         (self_, Task::batch([dummy_task, task]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, os::unix::fs::symlink};
+
+    #[test]
+    fn finds_flatpak_icon_exported_after_the_first_lookup() {
+        let fixture = tempfile::tempdir().unwrap();
+        let flatpak = fixture.path().join("flatpak");
+        let installation = flatpak.join("app/io.test.CosmicLateIcon/active/export/share");
+        let exported_desktop =
+            flatpak.join("exports/share/applications/io.test.CosmicLateIcon.desktop");
+        let installed_desktop = installation.join("applications/io.test.CosmicLateIcon.desktop");
+        fs::create_dir_all(exported_desktop.parent().unwrap()).unwrap();
+        fs::create_dir_all(installed_desktop.parent().unwrap()).unwrap();
+        fs::write(
+            &installed_desktop,
+            "[Desktop Entry]\nType=Application\nName=Late Icon\nExec=true\nIcon=io.test.CosmicLateIcon\n",
+        )
+        .unwrap();
+        symlink(installed_desktop, &exported_desktop).unwrap();
+
+        let entry = load_desktop_file(&[], exported_desktop).unwrap();
+        let exported_icon =
+            installation.join("icons/hicolor/scalable/apps/io.test.CosmicLateIcon.svg");
+        let expected = svg::Handle::from_path(&exported_icon);
+        assert!(!matches!(
+            application_icon(&entry).data,
+            icon::Data::Svg(handle) if handle.id() == expected.id()
+        ));
+
+        fs::create_dir_all(exported_icon.parent().unwrap()).unwrap();
+        fs::write(
+            &exported_icon,
+            r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            application_icon(&entry).data,
+            icon::Data::Svg(handle) if handle.id() == expected.id()
+        ));
     }
 }

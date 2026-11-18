@@ -19,28 +19,20 @@ pub fn desktop_files<I: 'static + Hash + Copy + Send + Sync + Debug>(
         stream::channel(
             50,
             move |mut output: futures::channel::mpsc::Sender<Event>| async move {
-                let handle = tokio::runtime::Handle::current();
-                let (tx, mut rx) = mpsc::channel(4);
-                let mut last_update = std::time::Instant::now();
-
-                // Automatically select the best implementation for your platform.
-                // You can also access each implementation directly e.g. INotifyWatcher.
+                let (tx, mut rx) = mpsc::channel(1);
                 let watcher = RecommendedWatcher::new(
                     move |res: Result<notify::Event, notify::Error>| {
-                        if let Ok(event) = res {
-                            match event.kind {
-                                EventKind::Create(_)
-                                | EventKind::Modify(_)
-                                | EventKind::Remove(_) => {
-                                    let now = std::time::Instant::now();
-                                    if now.duration_since(last_update).as_secs() > 3 {
-                                        _ = handle.block_on(tx.send(()));
-                                        last_update = now;
-                                    }
-                                }
-
-                                _ => (),
-                            }
+                        if let Ok(event) = res
+                            && matches!(
+                                event.kind,
+                                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+                            )
+                            && event.paths.iter().any(|path| {
+                                path.extension().is_some_and(|ext| ext == "desktop")
+                                    || path.ends_with(".changed")
+                            })
+                        {
+                            let _ = tx.try_send(());
                         }
                     },
                     Config::default(),
@@ -48,11 +40,27 @@ pub fn desktop_files<I: 'static + Hash + Copy + Send + Sync + Debug>(
 
                 if let Ok(mut watcher) = watcher {
                     for path in cosmic::desktop::fde::default_paths() {
-                        let _ = watcher.watch(path.as_ref(), RecursiveMode::Recursive);
+                        let _ = watcher.watch(&path, RecursiveMode::Recursive);
+                        if path.ends_with("flatpak/exports/share/applications")
+                            && let Some(installation) = path.ancestors().nth(3)
+                        {
+                            // Flatpak signals changes here even when exports are created later.
+                            let _ = watcher.watch(installation, RecursiveMode::NonRecursive);
+                        }
                     }
 
+                    let quiet_period = std::time::Duration::from_millis(300);
                     while rx.recv().await.is_some() {
-                        _ = output.send(Event::Changed).await;
+                        loop {
+                            match tokio::time::timeout(quiet_period, rx.recv()).await {
+                                Ok(Some(())) => continue,
+                                Ok(None) => return,
+                                Err(_) => break,
+                            }
+                        }
+                        if output.send(Event::Changed).await.is_err() {
+                            return;
+                        }
                     }
                 }
 
