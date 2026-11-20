@@ -480,6 +480,7 @@ enum GroupRowKey {
 enum Message {
     Activate,
     UpdateFocused(Option<widget::Id>),
+    FocusFirstApp,
     InputChanged(String),
     KeyboardNav(keyboard_nav::Action),
     PrevRow,
@@ -727,6 +728,20 @@ impl cosmic::Application for CosmicAppLibrary {
                     },
                 ));
             }
+            Message::FocusFirstApp => {
+                let id = self.entry_ids.first().cloned();
+                match id {
+                    Some(id) => {
+                        return cosmic::Task::batch(vec![
+                            iced::widget::operation::focus(id.clone()),
+                            cosmic::task::message(Message::UpdateFocused(Some(id))),
+                        ]);
+                    }
+                    None => {
+                        return Task::none();
+                    }
+                }
+            }
             Message::KeyboardNav(message) => match message {
                 keyboard_nav::Action::FocusNext => {
                     return iced::Task::batch(vec![
@@ -947,7 +962,13 @@ impl cosmic::Application for CosmicAppLibrary {
                         }
                     }
                 };
-                return cosmic::task::message(Message::SelectGroup(group));
+                let mut cmds = vec![cosmic::task::message(Message::SelectGroup(group))];
+                if let Some(id) = &self.focused_id {
+                    if self.entry_ids.contains(&id) {
+                        cmds.push(cosmic::task::message(Message::FocusFirstApp));
+                    }
+                }
+                return iced::Task::batch(cmds);
             }
             Message::PreviousGroup => {
                 let group = match self.cur_group {
@@ -966,7 +987,13 @@ impl cosmic::Application for CosmicAppLibrary {
                         }
                     }
                 };
-                return cosmic::task::message(Message::SelectGroup(group));
+                let mut cmds = vec![cosmic::task::message(Message::SelectGroup(group))];
+                if let Some(id) = &self.focused_id {
+                    if self.entry_ids.contains(&id) {
+                        cmds.push(cosmic::task::message(Message::FocusFirstApp));
+                    }
+                }
+                return iced::Task::batch(cmds);
             }
             Message::ReorderGroup(new_order) => {
                 let prev_selected_key =
