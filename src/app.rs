@@ -488,6 +488,8 @@ enum Message {
         gpu_override: Option<gpu::Preference>,
     },
     SelectGroup(Option<usize>),
+    NextGroup,
+    PreviousGroup,
     ReorderGroup(Vec<GroupRowKey>),
     Delete(usize),
     ConfirmDelete,
@@ -920,6 +922,44 @@ impl cosmic::Application for CosmicAppLibrary {
                     cmds.push(text_input::focus(SEARCH_ID.clone()));
                 }
                 return iced::Task::batch(cmds);
+            }
+            Message::NextGroup => {
+                let group = match self.cur_group {
+                    Some(g) => {
+                        if g < self.config.groups.len() - 1 {
+                            Some(g + 1)
+                        } else {
+                            None
+                        }
+                    }
+                    None => {
+                        if self.group_keys.is_empty() {
+                            None
+                        } else {
+                            Some(0)
+                        }
+                    }
+                };
+                return cosmic::task::message(Message::SelectGroup(group));
+            }
+            Message::PreviousGroup => {
+                let group = match self.cur_group {
+                    Some(g) => {
+                        if g > 0 {
+                            Some(g - 1)
+                        } else {
+                            None
+                        }
+                    }
+                    None => {
+                        if self.config.groups.is_empty() {
+                            None
+                        } else {
+                            Some(self.config.groups.len() - 1)
+                        }
+                    }
+                };
+                return cosmic::task::message(Message::SelectGroup(group));
             }
             Message::ReorderGroup(new_order) => {
                 let prev_selected_key =
@@ -1802,6 +1842,12 @@ impl cosmic::Application for CosmicAppLibrary {
                     }
                     Key::Character(c) if modifiers.control() && (c == "b" || c == "h") => {
                         Some(Message::KeyboardNav(keyboard_nav::Action::FocusPrevious))
+                    }
+                    Key::Named(Named::Tab) if modifiers.control() && !modifiers.shift() => {
+                        Some(Message::NextGroup)
+                    }
+                    Key::Named(Named::Tab) if modifiers.control() && modifiers.shift() => {
+                        Some(Message::PreviousGroup)
                     }
                     Key::Named(Named::ArrowUp)
                         if matches!(status, iced::event::Status::Ignored) =>
