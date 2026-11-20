@@ -473,6 +473,7 @@ enum GroupRowKey {
 enum Message {
     Activate,
     UpdateFocused(Option<widget::Id>),
+    FocusFirstApp,
     InputChanged(String),
     KeyboardNav(keyboard_nav::Action),
     PrevRow,
@@ -488,6 +489,8 @@ enum Message {
         gpu_override: Option<gpu::Preference>,
     },
     SelectGroup(Option<usize>),
+    NextGroup,
+    PreviousGroup,
     ReorderGroup(Vec<GroupRowKey>),
     Delete(usize),
     ConfirmDelete,
@@ -718,6 +721,20 @@ impl cosmic::Application for CosmicAppLibrary {
                     },
                 ));
             }
+            Message::FocusFirstApp => {
+                let id = self.entry_ids.first().cloned();
+                match id {
+                    Some(id) => {
+                        return cosmic::Task::batch(vec![
+                            iced::widget::operation::focus(id.clone()),
+                            cosmic::task::message(Message::UpdateFocused(Some(id))),
+                        ]);
+                    }
+                    None => {
+                        return Task::none();
+                    }
+                }
+            }
             Message::KeyboardNav(message) => match message {
                 keyboard_nav::Action::FocusNext => {
                     return iced::Task::batch(vec![
@@ -918,6 +935,56 @@ impl cosmic::Application for CosmicAppLibrary {
                 let mut cmds = vec![self.filter_apps()];
                 if self.cur_group.is_none() {
                     cmds.push(text_input::focus(SEARCH_ID.clone()));
+                }
+                return iced::Task::batch(cmds);
+            }
+            Message::NextGroup => {
+                let group = match self.cur_group {
+                    Some(g) => {
+                        if g < self.config.groups.len() - 1 {
+                            Some(g + 1)
+                        } else {
+                            None
+                        }
+                    }
+                    None => {
+                        if self.group_keys.is_empty() {
+                            None
+                        } else {
+                            Some(0)
+                        }
+                    }
+                };
+                let mut cmds = vec![cosmic::task::message(Message::SelectGroup(group))];
+                if let Some(id) = &self.focused_id {
+                    if self.entry_ids.contains(&id) {
+                        cmds.push(cosmic::task::message(Message::FocusFirstApp));
+                    }
+                }
+                return iced::Task::batch(cmds);
+            }
+            Message::PreviousGroup => {
+                let group = match self.cur_group {
+                    Some(g) => {
+                        if g > 0 {
+                            Some(g - 1)
+                        } else {
+                            None
+                        }
+                    }
+                    None => {
+                        if self.config.groups.is_empty() {
+                            None
+                        } else {
+                            Some(self.config.groups.len() - 1)
+                        }
+                    }
+                };
+                let mut cmds = vec![cosmic::task::message(Message::SelectGroup(group))];
+                if let Some(id) = &self.focused_id {
+                    if self.entry_ids.contains(&id) {
+                        cmds.push(cosmic::task::message(Message::FocusFirstApp));
+                    }
                 }
                 return iced::Task::batch(cmds);
             }
@@ -1802,6 +1869,12 @@ impl cosmic::Application for CosmicAppLibrary {
                     }
                     Key::Character(c) if modifiers.control() && (c == "b" || c == "h") => {
                         Some(Message::KeyboardNav(keyboard_nav::Action::FocusPrevious))
+                    }
+                    Key::Named(Named::Tab) if modifiers.control() && !modifiers.shift() => {
+                        Some(Message::NextGroup)
+                    }
+                    Key::Named(Named::Tab) if modifiers.control() && modifiers.shift() => {
+                        Some(Message::PreviousGroup)
                     }
                     Key::Named(Named::ArrowUp)
                         if matches!(status, iced::event::Status::Ignored) =>
