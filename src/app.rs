@@ -393,12 +393,6 @@ impl CosmicAppLibrary {
     }
 
     fn handle_overlap(&mut self) -> Task<Message> {
-        // Without a live surface libcosmic queues the blur and applies it to the
-        // next surface it creates which is full-screen (unpadded)
-        // causing blur flashed on the next open
-        if self.surface_state != SurfaceState::Visible {
-            return Task::none();
-        }
         let mid_height = self.size.height / 2.;
         self.margin = 0.;
 
@@ -411,6 +405,12 @@ impl CosmicAppLibrary {
             }
 
             self.margin = o.y + o.height;
+        }
+        // Without a live surface libcosmic queues the blur and applies it to the
+        // next surface it creates which is full-screen (unpadded)
+        // causing blur flashed on the next open
+        if self.surface_state != SurfaceState::Visible {
+            return Task::none();
         }
         let mut cmds = Vec::with_capacity(2);
         // set the padding
