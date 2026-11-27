@@ -28,4 +28,4 @@ cancel = Hủy bỏ
 xdg-title = { app-name }
 xdg-keywords = Ứng dụng;Ứng dụng;Thư viện;Trình khởi chạy;Launcher
 app-name = Ứng dụng
-xdg-comment = Trình khởi chạy ứng dụng cho desktop COSMIC, liệt kê tất cả ứng dụng đã cài đặt dưới dạng lưới
+xdg-comment = Trình khởi chạy ứng dụng cho máy tính COSMIC, liệt kê tất cả ứng dụng đã cài đặt dưới dạng lưới
